@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:service-management:error:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "request_id",
+    "error"
+  ],
+  "properties": {
+    "schema": {
+      "const": "service.error.v1"
+    },
+    "request_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "details"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_command",
+            "invalid_json",
+            "forbidden",
+            "not_found",
+            "version_conflict",
+            "resource_conflict",
+            "idempotency_conflict",
+            "invalid_transition",
+            "already_converted",
+            "storage_unavailable",
+            "internal_error",
+            "runtime_unavailable",
+            "runtime_rejected",
+            "runtime_contract",
+            "handoff_unresolved",
+            "invalid_carry_forward",
+            "invalid_plan_inputs",
+            "projection_gap"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [],
+              "properties": {}
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "expected_version",
+                "actual_version"
+              ],
+              "properties": {
+                "expected_version": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "actual_version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

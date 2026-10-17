@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "service-management"
+version = "0.1.0"
+description = "Canonical Service Request and Case lifecycle foundations"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+service-management = "service_management.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

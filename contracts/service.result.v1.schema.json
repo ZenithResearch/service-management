@@ -1,0 +1,540 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:service-management:result:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "request_id",
+    "operation",
+    "authority",
+    "service_request",
+    "case",
+    "audit_event_ids"
+  ],
+  "properties": {
+    "schema": {
+      "const": "service.result.v1"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+    },
+    "operation": {
+      "enum": [
+        "request.create",
+        "request.qualify",
+        "request.accept",
+        "request.reject",
+        "request.convert",
+        "case.plan",
+        "case.close",
+        "case.plan.approve",
+        "case.plan.revise"
+      ]
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "mode"
+      ],
+      "properties": {
+        "subject": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "mode": {
+          "enum": [
+            "verified_call",
+            "local_dev_untrusted"
+          ]
+        }
+      }
+    },
+    "service_request": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "summary",
+            "details",
+            "state",
+            "version",
+            "created_at",
+            "updated_at",
+            "qualification",
+            "acceptance",
+            "rejection_reason",
+            "case_id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "details": {
+              "type": "string"
+            },
+            "state": {
+              "enum": [
+                "intake",
+                "qualified",
+                "accepted",
+                "rejected"
+              ]
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "created_at": {
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string"
+            },
+            "qualification": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "acceptance": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rejection_reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "case_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "case": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "service_request_id",
+            "obligation",
+            "state",
+            "version",
+            "created_at",
+            "updated_at",
+            "plan_scope",
+            "closure_resolution"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+            },
+            "service_request_id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+            },
+            "obligation": {
+              "type": "string"
+            },
+            "state": {
+              "enum": [
+                "open",
+                "planned",
+                "closed"
+              ]
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "created_at": {
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string"
+            },
+            "plan_scope": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "closure_resolution": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "current_plan_revision_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "plan_revision": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema",
+            "id",
+            "case_id",
+            "revision_number",
+            "reason",
+            "author",
+            "authority_mode",
+            "created_at",
+            "command_id",
+            "case_version_before",
+            "prior_revision_id",
+            "prior_pin",
+            "new_pin",
+            "superseded_run_id",
+            "inputs",
+            "carry_forward"
+          ],
+          "properties": {
+            "schema": {
+              "const": "service.case-plan-revision.v1"
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+            },
+            "case_id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+            },
+            "revision_number": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "author": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+            },
+            "authority_mode": {
+              "enum": [
+                "verified_call",
+                "local_dev_untrusted"
+              ]
+            },
+            "created_at": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "command_id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+            },
+            "case_version_before": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "prior_revision_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "prior_pin": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "process_id",
+                    "process_version",
+                    "compilation_hash"
+                  ],
+                  "properties": {
+                    "process_id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                    },
+                    "process_version": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                    },
+                    "compilation_hash": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "new_pin": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "process_id",
+                "process_version",
+                "compilation_hash"
+              ],
+              "properties": {
+                "process_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                },
+                "process_version": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                },
+                "compilation_hash": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              }
+            },
+            "superseded_run_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "inputs": {
+              "type": "object",
+              "maxProperties": 128,
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+              }
+            },
+            "carry_forward": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "run_id",
+                  "step_id",
+                  "attempt_id",
+                  "output_name",
+                  "target_input",
+                  "expected_output_digest",
+                  "output_id",
+                  "receipt_id",
+                  "actor_id",
+                  "fence",
+                  "source_pin",
+                  "output_type",
+                  "committed_at_ms"
+                ],
+                "properties": {
+                  "run_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "step_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "attempt_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "output_name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "target_input": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "expected_output_digest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "output_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "receipt_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "actor_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "fence": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "source_pin": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "process_id",
+                      "process_version",
+                      "compilation_hash"
+                    ],
+                    "properties": {
+                      "process_id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                      },
+                      "process_version": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                      },
+                      "compilation_hash": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                      }
+                    }
+                  },
+                  "output_type": {
+                    "type": "object"
+                  },
+                  "committed_at_ms": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "handoff": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event_id",
+            "revision_id",
+            "state",
+            "attempts",
+            "last_error",
+            "uncertain",
+            "run_id"
+          ],
+          "properties": {
+            "event_id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+            },
+            "revision_id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+            },
+            "state": {
+              "enum": [
+                "pending",
+                "started",
+                "failed"
+              ]
+            },
+            "attempts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "last_error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "uncertain": {
+              "type": "boolean"
+            },
+            "run_id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "audit_event_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
+    }
+  }
+}

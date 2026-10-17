@@ -1,0 +1,50 @@
+[
+  {
+    "schema": "service.command.v1",
+    "operation": "request.create",
+    "request_id": "example-intake",
+    "resource": {"kind": "ServiceRequest", "id": "example-request"},
+    "expected_version": null,
+    "payload": {"summary": "Arrange a managed inspection", "details": "Service scope will be qualified before acceptance."}
+  },
+  {
+    "schema": "service.command.v1",
+    "operation": "request.qualify",
+    "request_id": "example-qualify",
+    "resource": {"kind": "ServiceRequest", "id": "example-request"},
+    "expected_version": 1,
+    "payload": {"qualification": "The service owner and requested inspection scope are confirmed."}
+  },
+  {
+    "schema": "service.command.v1",
+    "operation": "request.accept",
+    "request_id": "example-accept",
+    "resource": {"kind": "ServiceRequest", "id": "example-request"},
+    "expected_version": 2,
+    "payload": {"acceptance": "The service owner accepts responsibility for this request."}
+  },
+  {
+    "schema": "service.command.v1",
+    "operation": "request.convert",
+    "request_id": "example-convert",
+    "resource": {"kind": "ServiceRequest", "id": "example-request"},
+    "expected_version": 3,
+    "payload": {"case_id": "example-case", "obligation": "Coordinate and record the agreed inspection."}
+  },
+  {
+    "schema": "service.command.v1",
+    "operation": "case.plan",
+    "request_id": "example-plan",
+    "resource": {"kind": "Case", "id": "example-case"},
+    "expected_version": 1,
+    "payload": {"scope": "Collect the inspection findings and record the service owner's decision. This scope creates no runtime execution."}
+  },
+  {
+    "schema": "service.command.v1",
+    "operation": "case.close",
+    "request_id": "example-close",
+    "resource": {"kind": "Case", "id": "example-case"},
+    "expected_version": 2,
+    "payload": {"resolution": "The service owner confirms the recorded outcome and closes this sample obligation."}
+  }
+]
