@@ -345,7 +345,7 @@ export function encryptedIntakeAuthorizationBytes(prepared: PreparedEncryptedSub
 
 export function clientReadAuthorizationBytes(request: Pick<AuthorizationRequest, "operation" | "resource" | "method" | "body_digest">): Uint8Array {
   if (request.method !== "GET" || request.body_digest !== null || (request.operation !== "request.status" && request.operation !== "artifact.get" && request.operation !== "receipt.get")) throw new ServiceClientError("invalid_request", "Unsupported client read authorization");
-  const prefixes: Record<string, string[]> = {"request.status": ["requests/"], "artifact.get": ["artifacts/"], "receipt.get": ["process-runtime/receipts/", "service-management/receipts/", "secs/receipts/"]};
+  const prefixes: Record<ClientReadAuthorizationV1["operation"], readonly string[]> = {"request.status": ["requests/"], "artifact.get": ["artifacts/"], "receipt.get": ["process-runtime/receipts/", "service-management/receipts/", "secs/receipts/"]};
   if (typeof request.resource !== "string" || !prefixes[request.operation].some((prefix) => request.resource.startsWith(prefix)) || request.resource.length > 4096 || request.resource.includes("\0")) throw new ServiceClientError("invalid_request", "Invalid client read resource");
   const value: ClientReadAuthorizationV1 = {schema: "service.client-read-authorization.v1", operation: request.operation, resource: request.resource};
   return ownedBytes(new TextEncoder().encode(canonicalJson(value)));

@@ -11,6 +11,7 @@ from typing import Any
 
 from .castalia_requester import (
     Ed25519PublicKey,
+    MEMBERSHIP_ID_DOMAIN,
     WalletPresentationPin,
     verify_wallet_presentation,
 )
@@ -224,6 +225,11 @@ class CastaliaClientReadVerifier:
                 presentation_pins=self.policy.presentation_pins,
                 policy_digest_sha256=self.policy.policy_digest_sha256,
                 accepted_at=math.floor(now.timestamp()), expected_caller=self.policy.caller)
-            return "did.castalia.key." + holder
+            # Intake ownership is the deterministic Zenith membership identity,
+            # not a second key-shaped account. Receiver credentials are issued
+            # only after verifying membership for this same holder key.
+            membership_id = hashlib.sha256(
+                MEMBERSHIP_ID_DOMAIN + bytes.fromhex(holder)).hexdigest()
+            return "did.castalia.member." + membership_id
         except (KeyError, TypeError, ValueError, UnicodeError, OverflowError, json.JSONDecodeError):
             raise ServiceError("forbidden") from None

@@ -175,7 +175,9 @@ class CastaliaClientReadVerifierTests(unittest.TestCase):
         evidence = self.evidence()
         self.assertEqual(
             self.verifier.verify("request.status", "requests/anima-brand-request-01", evidence),
-            "did.castalia.key." + public(self.holder))
+            "did.castalia.member." + hashlib.sha256(
+                b"castalia/zenith-membership-id/v3\0" + bytes.fromhex(public(self.holder))
+            ).hexdigest())
         with self.assertRaises(ServiceError):
             self.verifier.verify("request.status", "requests/anima-brand-request-02", evidence)
         with self.assertRaises(ServiceError):
