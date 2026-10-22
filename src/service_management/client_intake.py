@@ -196,6 +196,10 @@ class ExactAuthorityIssuer(Protocol):
         """Issue native evidence bound to these exact canonical command bytes."""
         ...
 
+    def resume(self, command: bytes) -> bytes:
+        """Recover only the exact previously started native issuance."""
+        ...
+
 
 class NativeAuthorizedServicePort:
     """Bind the retained command to native authority, then use canonical ingress.
@@ -216,6 +220,19 @@ class NativeAuthorizedServicePort:
         if canonical(parsed).encode("utf-8") != command:
             raise ServiceError("invalid_command")
         evidence = self.issuer.issue(command)
+        return self._submit(command, evidence)
+
+    def resume(self, command: bytes) -> dict:
+        parsed = load_json(command)
+        if canonical(parsed).encode("utf-8") != command:
+            raise ServiceError("invalid_command")
+        recover = getattr(self.issuer, "resume", None)
+        if not callable(recover):
+            raise ServiceError("forbidden")
+        evidence = recover(command)
+        return self._submit(command, evidence)
+
+    def _submit(self, command: bytes, evidence: bytes) -> dict:
         if not isinstance(evidence, bytes) or not evidence or len(evidence) > 1_048_576:
             raise ServiceError("forbidden")
         return self.ingress.submit(command, authority_evidence=evidence)
@@ -228,7 +245,7 @@ class UnknownAdmissionOutcome(Exception):
 class IntakeStore:
     """Separate durable inbox state; the canonical service DB remains authoritative."""
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def __init__(self, database: str | Path, *, timeout: float = 5.0):
         if str(database) == ":memory:":
@@ -264,7 +281,11 @@ class IntakeStore:
                         requester_subject TEXT, membership_credential_id TEXT,
                         service_result_json TEXT, rejection_code TEXT)""")
                     connection.execute("CREATE INDEX client_intake_pending ON client_intake(state,request_id)")
-                connection.execute("PRAGMA user_version = 1")
+                if version < 2:
+                    connection.execute("""ALTER TABLE client_intake ADD COLUMN authority_state TEXT NOT NULL
+                        DEFAULT 'fresh' CHECK(authority_state IN ('fresh','resume_required'))""")
+                    connection.execute("CREATE INDEX client_intake_authority ON client_intake(state,authority_state,request_id)")
+                connection.execute("PRAGMA user_version = 2")
                 connection.commit()
                 os.chmod(self.database, 0o600)
             except BaseException:
@@ -321,13 +342,15 @@ class IntakeStore:
                 "service_request_version": request.get("version") if request else None,
                 "status_url": f"/v1/client/requests/{row['request_id']}"}
 
-    def pending(self, *, limit: int = 16) -> list[dict]:
+    def pending(self, *, limit: int = 16, recovery: bool = False) -> list[dict]:
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError("invalid intake batch")
         connection = self._connect()
         try:
+            authority_state = "resume_required" if recovery else "fresh"
             return [dict(row) for row in connection.execute(
-                "SELECT * FROM client_intake WHERE state='pending' ORDER BY request_id LIMIT ?", (limit,))]
+                "SELECT * FROM client_intake WHERE state='pending' AND authority_state=? ORDER BY request_id LIMIT ?",
+                (authority_state, limit))]
         finally:
             connection.close()
 
@@ -357,6 +380,39 @@ class IntakeStore:
                 connection.execute("""UPDATE client_intake SET command_digest=?,command_json=?,
                     requester_subject=?,membership_credential_id=? WHERE request_id=?""",
                     (digest, command.decode("utf-8"), requester.subject, requester.membership_credential_id, request_id))
+                connection.commit()
+            except sqlite3.DatabaseError:
+                connection.rollback()
+                raise ServiceError("storage_unavailable") from None
+            finally:
+                connection.close()
+
+    def begin_authority(self, request_id: str, command_digest: str) -> None:
+        """Durably require explicit native resume before starting issuance.
+
+        The marker is committed before the Wallet process is launched. A host
+        crash can therefore hold a command that never reached Wallet, but it can
+        never make restart silently repeat ``issue`` after Wallet did receive it.
+        """
+        if not _sha256(command_digest):
+            raise ValueError("invalid command digest")
+        with self._writer:
+            connection = self._connect()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                row = connection.execute(
+                    "SELECT state,command_digest,authority_state FROM client_intake WHERE request_id=?",
+                    (request_id,)).fetchone()
+                if row is None:
+                    raise ServiceError("not_found")
+                if row["state"] != "pending":
+                    connection.commit(); return
+                if row["command_digest"] != command_digest:
+                    raise ServiceError("idempotency_conflict")
+                connection.execute(
+                    "UPDATE client_intake SET authority_state='resume_required' "
+                    "WHERE request_id=? AND state='pending' AND authority_state='fresh'",
+                    (request_id,))
                 connection.commit()
             except sqlite3.DatabaseError:
                 connection.rollback()
@@ -459,8 +515,17 @@ class AdmissionWorker:
         return canonical(value).encode("utf-8")
 
     def admit_once(self, *, limit: int = 16) -> list[dict]:
+        return self._admit_once(limit=limit, recovery=False)
+
+    def resume_once(self, *, limit: int = 16) -> list[dict]:
+        """Explicitly recover retained commands; never create fresh authority."""
+        if not callable(getattr(self.service, "resume", None)):
+            raise ValueError("service recovery port required")
+        return self._admit_once(limit=limit, recovery=True)
+
+    def _admit_once(self, *, limit: int, recovery: bool) -> list[dict]:
         results = []
-        for row in self.store.pending(limit=limit):
+        for row in self.store.pending(limit=limit, recovery=recovery):
             intake = Intake.parse(row["intake_json"].encode("utf-8"))
             receipt_value = json.loads(row["transport_receipt_json"])
             receipt = TransportReceipt(receipt_value["transport"], receipt_value["receipt_id"],
@@ -475,11 +540,20 @@ class AdmissionWorker:
                 raise
             command = self.command(intake, requester)
             self.store.retain_command(intake.request_id, command, requester)
+            digest = _digest(command)
+            if recovery:
+                retained = row["command_json"]
+                if not isinstance(retained, str) or retained.encode("utf-8") != command:
+                    raise ServiceError("idempotency_conflict")
+            else:
+                # Commit the recovery requirement before starting the native
+                # Wallet exchange. Restart can now use only explicit resume.
+                self.store.begin_authority(intake.request_id, digest)
             try:
-                result = self.service.submit(command)
+                result = self.service.resume(command) if recovery else self.service.submit(command)
             except UnknownAdmissionOutcome:
-                # The exact command is retained; retry/reconciliation is safe.
+                # The exact command and explicit recovery state remain durable.
                 continue
-            self.store.admit(intake.request_id, _digest(command), result)
+            self.store.admit(intake.request_id, digest, result)
             results.append(self.store.get(intake.request_id))
         return results

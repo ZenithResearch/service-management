@@ -1,7 +1,9 @@
 import base64
 import copy
 import hashlib
+import tempfile
 import unittest
+from pathlib import Path
 
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -17,6 +19,7 @@ from service_management.castalia_requester import (
     CastaliaRequesterVerifier,
     WalletPresentationPin,
     ZenithMembershipRoot,
+    load_requester_policy,
 )
 from service_management.client_intake import Intake, TransportReceipt
 from service_management.contracts import canonical
@@ -130,6 +133,26 @@ class CastaliaRequesterVerifierTests(unittest.TestCase):
         local = TransportReceipt("fixture-inbox", "fixture-receipt", "2027-01-15T08:00:01Z", None)
         with self.assertRaises(ServiceError) as raised: self.verify(self.evidence(), local)
         self.assertEqual(raised.exception.code, "forbidden")
+
+    def test_closed_operator_policy_file_round_trips_exact_pins(self):
+        value = {
+            "schema": "service.castalia-requester-policy.v1",
+            "membership_roots": [{"issuer_id": root.issuer_id, "key_id": root.key_id,
+                                  "public_key_hex": root.public_key_hex}
+                                 for root in self.policy.membership_roots],
+            "presentation_pins": [{"issuer": pin.issuer, "key_id": pin.key_id,
+                                   "public_key_hex": pin.public_key_hex, "audience": pin.audience,
+                                   "callers": [list(caller) for caller in pin.callers]}
+                                  for pin in self.policy.presentation_pins],
+            "policy_digest_sha256": self.policy.policy_digest_sha256,
+            "trusted_transports": list(self.policy.trusted_transports),
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "requester-policy.json"
+            path.write_text(canonical(value)); path.chmod(0o600)
+            self.assertEqual(load_requester_policy(path), self.policy)
+            path.write_text(canonical({**value, "unexpected": True}))
+            with self.assertRaises(ValueError): load_requester_policy(path)
 
     def test_rejects_unknown_fields_before_crypto(self):
         unknown = self.evidence(); unknown["presentation"]["role"] = "admin"

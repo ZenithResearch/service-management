@@ -1,7 +1,7 @@
 # Provider client intake boundary
 
-Status: **local ingestion implementation complete; public encrypted envelope and
-deployed gateway are not production-qualified**.
+Status: **source candidate complete; installed native artifacts, real
+operator pins, deployed gateway and live Queue are not production-qualified**.
 
 This adapter connects a reachable provider inbox to the existing canonical
 Service Management command boundary. It does not make the queue, dispatcher or
@@ -84,10 +84,12 @@ request. Neither proof is Service Management command authority.
 3. The pull worker commits the exact intake, public requester evidence and
    transport receipt before queue acknowledgement. A lost acknowledgement causes
    an exact local deduplication retry.
-4. The admission worker durably retains the generated command before submission.
-   A lost or unknown result leaves the row pending. Restart submits the same bytes;
-   Service Management's existing result store returns the original result without
-   a second audit event or aggregate.
+4. The admission worker durably retains the generated command and changes its
+   local authority state to `resume_required` before starting Wallet issuance.
+   Fresh polling never calls `issue` again for that row. An uncertain or lost
+   result is recovered only by the explicit `resume-admission-once` operator
+   command with the same bytes; Service Management's result store then returns
+   the original result without a second audit event or aggregate.
 5. A dispatcher or Vercel OIDC token can move ciphertext. It does not grant Zenith
    membership, organizational authority or Service Management command authority.
 6. `pending` means only that the reachable transport retained the payload.
@@ -124,11 +126,12 @@ The following ports intentionally have no permissive default:
   over the exact canonical intake bytes. It returns the deterministic public
   membership ID only. Queue or dispatcher credentials are never accepted as
   membership or request consent.
-- `NativeAuthorizedServicePort`: pass the exact retained canonical command to an
-  operator-composed `ExactAuthorityIssuer`, require bounded native evidence, and
-  submit the same bytes and evidence through `CommandIngress`. It cannot accept a
-  bearer string or synthesize user authority. The production issuer remains an
-  explicit release-composition dependency.
+- `NativeAuthorizedServicePort`: pass the exact retained canonical command to
+  `CastaliaWalletServiceAuthority`, require bounded native evidence, and submit
+  the same bytes and evidence through `CommandIngress`. The adapter pins the
+  released `castalia-wallet-service` executable and one owner-private
+  `application=service` configuration. It exposes distinct `issue` and `resume`
+  operations and never falls back between them.
 
 The production public gateway receives an already-sealed secS envelope plus
 bounded routing metadata. The requester's presentation binds the provider,
@@ -199,8 +202,8 @@ binary response frame. It never receives a key path and never exports the
 recipient private key.
 
 The executable and `service.intake-envelope.v1` contract are under review in
-[secS PR #301](https://github.com/ZenithResearch/secS-magik/pull/301), currently
-at commit `7d46192`. Source qualification does not make that commit an installed
+[secS PR #302](https://github.com/ZenithResearch/secS-magik/pull/302), currently
+at commit `4ec825c`. Source qualification does not make that commit an installed
 production component. Production configuration must pin the digest of a merged,
 released artifact and provision its canonical macOS recipient key explicitly.
 Service Management still verifies requester membership and request authority
@@ -228,10 +231,42 @@ The focused tests cover:
   admission, and fail-closed handling of key/configuration failures.
 
 These are integration-ready source tests. The secS envelope and native opener
-are implemented and source-qualified in PR #301 but are not yet a released
+are implemented and source-qualified in PR #302 but are not yet a released
 artifact. The requester verifier is source-qualified but still needs released
 composition with the real public issuer pins. Production remains blocked on the
 secS release, a deployed gateway/queue with confirmed owner cost, operator OIDC
-provisioning, released receiver credential signer/endpoint composition, native
-Service authority issuer, and one released end-to-end namespaced workflow
-execution with real artifacts.
+provisioning, released receiver credential signer/endpoint composition, merged
+Wallet workspace authority, installed/configured native pins, and one released
+end-to-end namespaced workflow execution with real artifacts.
+
+## One-shot local worker commands
+
+The `service-management-provider` entry point keeps transport consumption and
+canonical admission explicit:
+
+```text
+service-management-provider pull-once \
+  --intake-database /private/provider/intake.db \
+  --region <released-region> --topic <released-topic> \
+  --consumer-group <one-provider-installation> \
+  --intake-opener /private/provider/bin/secs-provider-intake-v1 \
+  --intake-opener-sha256 <released-sha256>
+
+service-management-provider admit-once \
+  --intake-database /private/provider/intake.db \
+  --service-database /private/provider/service.db \
+  --requester-policy /private/provider/requester-policy.json \
+  --native-verifier /private/provider/bin/process-runtime-secs-check \
+  --native-verifier-sha256 <released-sha256> \
+  --receiver-policy /private/provider/service-receiver.json \
+  --wallet-command /private/provider/bin/castalia-wallet-service \
+  --wallet-command-sha256 <released-sha256> \
+  --wallet-configuration /private/provider/wallet-command.json \
+  --wallet-configuration-sha256 <reviewed-sha256>
+```
+
+Run `resume-admission-once` with the same admission arguments after an uncertain
+Wallet/output outcome. It selects only held rows and invokes only Wallet
+`resume`; `admit-once` selects only fresh rows. The worker receives Vercel OIDC
+through the official SDK environment resolution. It accepts no browser token,
+Wallet key, Service key, or arbitrary operation on its command line.

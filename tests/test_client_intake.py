@@ -89,6 +89,10 @@ class LocalServicePort:
             raise UnknownAdmissionOutcome()
         return result
 
+    def resume(self, command):
+        self.commands.append(command)
+        return self.ingress.submit(command)
+
 
 class ClientIntakeTests(unittest.TestCase):
     def setUp(self):
@@ -141,7 +145,8 @@ class ClientIntakeTests(unittest.TestCase):
         worker = AdmissionWorker(self.intakes, MemberVerifier(), port)
         self.assertEqual(worker.admit_once(), [])
         self.assertEqual(self.intakes.get("anima-brand-request-01")["state"], "pending")
-        completed = worker.admit_once()
+        self.assertEqual(worker.admit_once(), [], "fresh issue is never repeated after uncertainty")
+        completed = worker.resume_once()
         self.assertEqual(completed[0]["state"], "admitted")
         self.assertEqual(port.commands[0], port.commands[1])
         self.assertEqual(completed[0]["service_request_id"], "anima-brand-request-01")
@@ -161,7 +166,9 @@ class ClientIntakeTests(unittest.TestCase):
         AdmissionWorker(self.intakes, MemberVerifier(), first).admit_once()
         reopened = IntakeStore(self.root / "intake.db")
         second = LocalServicePort(self.ingress)
-        result = AdmissionWorker(reopened, MemberVerifier(), second).admit_once()[0]
+        restarted = AdmissionWorker(reopened, MemberVerifier(), second)
+        self.assertEqual(restarted.admit_once(), [])
+        result = restarted.resume_once()[0]
         self.assertEqual(result["state"], "admitted")
         self.assertEqual(first.commands[0], second.commands[0])
         self.assertTrue(reopened.health())
@@ -190,6 +197,8 @@ class ClientIntakeTests(unittest.TestCase):
         class Issuer:
             def issue(self, command):
                 calls.append(("issue", command)); return b"native-evidence"
+            def resume(self, command):
+                calls.append(("resume", command)); return b"native-evidence"
 
         class Ingress:
             def submit(self, command, *, authority_evidence=None):
@@ -199,6 +208,8 @@ class ClientIntakeTests(unittest.TestCase):
             "did.castalia.member.42f891", "membership-credential-01"))
         self.assertEqual(NativeAuthorizedServicePort(Ingress(), Issuer()).submit(command), {"accepted": True})
         self.assertEqual(calls, [("issue", command), ("submit", command, b"native-evidence")])
+        self.assertEqual(NativeAuthorizedServicePort(Ingress(), Issuer()).resume(command), {"accepted": True})
+        self.assertEqual(calls[-2:], [("resume", command), ("submit", command, b"native-evidence")])
 
         class EmptyIssuer:
             def issue(self, command): return b""
@@ -206,6 +217,28 @@ class ClientIntakeTests(unittest.TestCase):
         with self.assertRaises(ServiceError) as rejected:
             NativeAuthorizedServicePort(Ingress(), EmptyIssuer()).submit(command)
         self.assertEqual(rejected.exception.code, "forbidden")
+
+    def test_authority_marker_is_durable_before_issue_and_resume_is_explicit(self):
+        self.intakes.ingest(opened(), receipt())
+
+        class Uncertain:
+            def __init__(self): self.issued = 0; self.resumed = 0
+            def submit(inner, command):
+                inner.issued += 1
+                row = self.intakes.pending(recovery=True)[0]
+                self.assertEqual(row["authority_state"], "resume_required")
+                raise UnknownAdmissionOutcome()
+            def resume(inner, command):
+                inner.resumed += 1
+                return self.ingress.submit(command)
+
+        port = Uncertain(); worker = AdmissionWorker(self.intakes, MemberVerifier(), port)
+        self.assertEqual(worker.admit_once(), [])
+        self.assertEqual(port.issued, 1)
+        self.assertEqual(worker.admit_once(), [])
+        self.assertEqual(port.issued, 1)
+        self.assertEqual(worker.resume_once()[0]["state"], "admitted")
+        self.assertEqual(port.resumed, 1)
 
 
 if __name__ == "__main__":

@@ -70,7 +70,7 @@ class SDKRuntimeAdapter:
             cancelled=cancelled,
         )
 
-    def _call(self, envelope, *, command):
+    def _call(self, envelope, *, command, resume=False):
         if self.cancelled is not None and self.cancelled():
             raise RuntimeCallError("runtime_unavailable", retryable=True)
         from process_runtime_client import RuntimeClientError, exact_retry
@@ -86,7 +86,13 @@ class SDKRuntimeAdapter:
                 raise RuntimeClientError("unauthenticated")
             # Acquisition may block or mutate its input. Retain the validated
             # request separately and never reuse the provider's mutable copy.
-            evidence = authority(json.loads(canonical(request)))
+            if resume:
+                recover = getattr(authority, "resume", None)
+                if not callable(recover):
+                    raise RuntimeCallError("unknown_outcome", retryable=True, uncertain=True)
+                evidence = recover(json.loads(canonical(request)))
+            else:
+                evidence = authority(json.loads(canonical(request)))
             if type(evidence) is not bytes:
                 raise RuntimeClientError("unauthenticated")
             if self.cancelled is not None and self.cancelled():
@@ -107,6 +113,10 @@ class SDKRuntimeAdapter:
 
     def command(self, envelope):
         return self._call(envelope, command=True)
+
+    def resume_command(self, envelope):
+        """Explicitly recover an uncertain retained command; never issue anew."""
+        return self._call(envelope, command=True, resume=True)
 
     def query(self, envelope):
         return self._call(envelope, command=False)

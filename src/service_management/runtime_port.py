@@ -26,6 +26,7 @@ class RuntimeClient(Protocol):
     present an unauthenticated HTTP response as a trusted query result.
     """
     def command(self, envelope: dict) -> dict: ...
+    def resume_command(self, envelope: dict) -> dict: ...
     def query(self, envelope: dict) -> dict: ...
     def new_command(self, operation: str, *, request_id: str, expected_version: int | None, payload: dict) -> dict: ...
 
@@ -36,6 +37,9 @@ class UnavailableRuntime:
 
     def query(self, envelope: dict) -> dict:
         raise RuntimeCallError("storage_unavailable", retryable=True)
+
+    def resume_command(self, envelope: dict) -> dict:
+        raise RuntimeCallError("storage_unavailable", retryable=True, uncertain=True)
 
     def new_command(self, operation, **kwargs):
         raise RuntimeCallError("storage_unavailable", retryable=True)

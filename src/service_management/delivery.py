@@ -36,7 +36,12 @@ class OutboxDelivery:
         try:
             # The adapter receives a value copy; it cannot mutate the retained
             # command against which its acknowledgement will be checked.
-            receipt = json.loads(canonical(self.runtime.command(json.loads(canonical(row["command"])))))
+            command = json.loads(canonical(row["command"]))
+            recover = getattr(self.runtime, "resume_command", None)
+            if previously_uncertain and callable(recover):
+                receipt = json.loads(canonical(recover(command)))
+            else:
+                receipt = json.loads(canonical(self.runtime.command(command)))
             self._check_receipt(row, receipt)
             state = "started"
         except RuntimeCallError as failure:

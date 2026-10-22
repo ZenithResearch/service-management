@@ -107,8 +107,11 @@ domain or storage implementation is imported by service code. The CLI leaves thi
 port unavailable by default. Explicit endpoint/projection/polling options and the
 trusted startup factory now compose this port with bounded durable delivery and
 projection workers; see [runtime workers](docs/runtime-workers.md). Production
-outbound native authority remains unavailable unless a qualified port is injected
-by trusted startup code. Development CLI polling is visibly untrusted.
+outbound native authority can select the pinned `castalia-wallet-service`
+adapter with an owner-private `application=runtime` configuration and exact
+executable/config digests. Runtime independently verifies every returned
+envelope; source support does not qualify or activate installed artifacts.
+Development CLI polling remains visibly untrusted.
 
 The projection consumes the global runtime cursor stream into bounded, redacted
 progress summaries. It can be discarded and rebuilt without altering canonical

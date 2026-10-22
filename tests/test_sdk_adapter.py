@@ -181,6 +181,22 @@ class SDKAdapterAdmissionTests(unittest.TestCase):
                 )
                 self.assertIs(adapter._client.authority, original_authority)
 
+    def test_resume_command_selects_only_explicit_authority_recovery(self):
+        command = requests()[0][1]
+        calls = []
+
+        class Authority:
+            def __call__(inner, value):
+                calls.append(("issue", deepcopy(value))); return EVIDENCE
+            def resume(inner, value):
+                calls.append(("resume", deepcopy(value))); return EVIDENCE
+
+        adapter = SDKRuntimeAdapter.connect(self.endpoint, authority=Authority())
+        adapter.command(command)
+        adapter.resume_command(command)
+        self.assertEqual([mode for mode, _ in calls], ["issue", "resume"])
+        self.assertEqual(calls[0][1], calls[1][1])
+
     def test_invalid_envelopes_deny_before_authority(self):
         for kind, envelope in requests():
             mutations = [

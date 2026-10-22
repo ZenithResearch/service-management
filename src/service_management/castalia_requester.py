@@ -12,6 +12,7 @@ import base64
 import binascii
 import hashlib
 import json
+from pathlib import Path
 import re
 import struct
 from dataclasses import dataclass
@@ -196,6 +197,38 @@ class CastaliaRequesterPolicy:
             raise ValueError("duplicate presentation pin")
         for transport in self.trusted_transports:
             _text(transport, 64, ascii_only=True)
+
+
+def load_requester_policy(path: str | Path) -> CastaliaRequesterPolicy:
+    """Load one closed operator-owned requester policy at worker startup."""
+    source = Path(path)
+    if not source.is_absolute() or source.is_symlink():
+        raise ValueError("requester policy path must be an absolute regular file")
+    raw = source.read_bytes()
+    if not 0 < len(raw) <= 262_144:
+        raise ValueError("requester policy is not bounded")
+    value = _load(raw)
+    value = _exact(value, {"schema", "membership_roots", "presentation_pins",
+                           "policy_digest_sha256", "trusted_transports"})
+    if value["schema"] != "service.castalia-requester-policy.v1":
+        raise ValueError("unsupported requester policy")
+    if (not isinstance(value["membership_roots"], list)
+            or not isinstance(value["presentation_pins"], list)
+            or not isinstance(value["trusted_transports"], list)):
+        raise ValueError("requester policy arrays required")
+    roots = tuple(ZenithMembershipRoot(**item) for item in value["membership_roots"])
+    pins = []
+    for item in value["presentation_pins"]:
+        item = _exact(item, {"issuer", "key_id", "public_key_hex", "audience", "callers"})
+        callers = item["callers"]
+        if (not isinstance(callers, list) or any(
+                not isinstance(caller, list) or len(caller) != 2 for caller in callers)):
+            raise ValueError("closed caller pairs required")
+        pins.append(WalletPresentationPin(item["issuer"], item["key_id"],
+                    item["public_key_hex"], item["audience"],
+                    tuple((caller[0], caller[1]) for caller in callers)))
+    return CastaliaRequesterPolicy(roots, tuple(pins), value["policy_digest_sha256"],
+                                   tuple(value["trusted_transports"]))
 
 
 def verify_zenith_membership(value: Any,
