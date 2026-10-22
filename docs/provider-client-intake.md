@@ -270,3 +270,24 @@ Wallet/output outcome. It selects only held rows and invokes only Wallet
 `resume`; `admit-once` selects only fresh rows. The worker receives Vercel OIDC
 through the official SDK environment resolution. It accepts no browser token,
 Wallet key, Service key, or arbitrary operation on its command line.
+
+After admission, `advance-brand-package-once` advances at most one command for
+each retained `zenith.anima.brand-package` request. It accepts the same pinned
+Service verifier and Wallet arguments plus the Runtime endpoint, the four
+Runtime Wallet command/configuration pins, and the reviewed
+`process_id`/`process_version`/`compilation_hash` tuple. The fixed progression is:
+
+1. qualify and accept the canonical ServiceRequest;
+2. convert it to a deterministic Case and record its plan scope;
+3. commit the exact reviewed brief and reference manifest JSON as two
+   content-addressed Runtime artifacts;
+4. approve the Case plan with those artifact references, the organization name,
+   and the exact immutable `zenith.anima.brand-package` process pin.
+
+Every command is stored before authority acquisition. An uncertain Service or
+Runtime result remains held and is excluded from fresh work. Run
+`resume-brand-package-once` with the identical arguments to recover only the
+stored command through the corresponding native resume operation. Approval
+creates the ordinary durable Service outbox handoff; the separately configured
+outbox worker delivers that exact command to Runtime. Neither lifecycle command
+infers execution completion from the handoff acknowledgement.

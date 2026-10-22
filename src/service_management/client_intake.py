@@ -245,7 +245,7 @@ class UnknownAdmissionOutcome(Exception):
 class IntakeStore:
     """Separate durable inbox state; the canonical service DB remains authoritative."""
 
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def __init__(self, database: str | Path, *, timeout: float = 5.0):
         if str(database) == ":memory:":
@@ -285,7 +285,23 @@ class IntakeStore:
                     connection.execute("""ALTER TABLE client_intake ADD COLUMN authority_state TEXT NOT NULL
                         DEFAULT 'fresh' CHECK(authority_state IN ('fresh','resume_required'))""")
                     connection.execute("CREATE INDEX client_intake_authority ON client_intake(state,authority_state,request_id)")
-                connection.execute("PRAGMA user_version = 2")
+                if version < 3:
+                    connection.execute("""CREATE TABLE provider_lifecycle (
+                        request_id TEXT PRIMARY KEY REFERENCES client_intake(request_id),
+                        stage TEXT NOT NULL CHECK(stage IN (
+                            'request_admitted','qualified','accepted','converted','planned',
+                            'brief_stored','references_stored','approved')),
+                        command_target TEXT CHECK(command_target IN ('service','runtime')),
+                        command_digest TEXT, command_json TEXT,
+                        authority_state TEXT NOT NULL DEFAULT 'fresh'
+                            CHECK(authority_state IN ('fresh','resume_required')),
+                        last_result_json TEXT,
+                        CHECK((command_target IS NULL AND command_digest IS NULL AND command_json IS NULL)
+                           OR (command_target IS NOT NULL AND command_digest IS NOT NULL AND command_json IS NOT NULL)))""")
+                    connection.execute("""INSERT INTO provider_lifecycle(request_id,stage)
+                        SELECT request_id,'request_admitted' FROM client_intake WHERE state='admitted'""")
+                    connection.execute("CREATE INDEX provider_lifecycle_pending ON provider_lifecycle(stage,authority_state,request_id)")
+                connection.execute("PRAGMA user_version = 3")
                 connection.commit()
                 os.chmod(self.database, 0o600)
             except BaseException:
@@ -445,6 +461,8 @@ class IntakeStore:
                     if (row["state"] != "admitted" or row["command_digest"] != command_digest
                             or row["service_result_json"] != canonical(result)):
                         raise ServiceError("idempotency_conflict")
+                connection.execute("""INSERT INTO provider_lifecycle(request_id,stage)
+                    VALUES(?,'request_admitted') ON CONFLICT(request_id) DO NOTHING""", (request_id,))
                 connection.commit()
             except sqlite3.DatabaseError:
                 connection.rollback()
@@ -473,6 +491,107 @@ class IntakeStore:
             return False
         finally:
             if connection is not None:
+                connection.close()
+
+    def lifecycle_pending(self, *, limit: int = 16, recovery: bool = False) -> list[dict]:
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("invalid lifecycle batch")
+        authority_state = "resume_required" if recovery else "fresh"
+        connection = self._connect()
+        try:
+            return [dict(row) for row in connection.execute("""SELECT i.intake_json,l.*
+                FROM provider_lifecycle l JOIN client_intake i USING(request_id)
+                WHERE i.state='admitted' AND l.stage!='approved' AND l.authority_state=?
+                ORDER BY l.request_id LIMIT ?""", (authority_state, limit))]
+        finally:
+            connection.close()
+
+    def lifecycle_status(self, request_id: str) -> dict | None:
+        if not identifier(request_id):
+            raise ValueError("invalid request id")
+        connection = self._connect()
+        try:
+            row = connection.execute("SELECT * FROM provider_lifecycle WHERE request_id=?", (request_id,)).fetchone()
+            return dict(row) if row else None
+        finally:
+            connection.close()
+
+    def retain_lifecycle_command(self, request_id: str, stage: str, target: str, command: dict) -> str:
+        if target not in {"service", "runtime"}:
+            raise ValueError("invalid lifecycle target")
+        raw = canonical(command)
+        digest = _digest(raw.encode("utf-8"))
+        with self._writer:
+            connection = self._connect()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                row = connection.execute("SELECT * FROM provider_lifecycle WHERE request_id=?", (request_id,)).fetchone()
+                if row is None:
+                    raise ServiceError("not_found")
+                if row["stage"] != stage:
+                    raise ServiceError("version_conflict")
+                if row["command_digest"] is not None:
+                    if (row["command_target"] != target or row["command_digest"] != digest
+                            or row["command_json"] != raw):
+                        raise ServiceError("idempotency_conflict")
+                else:
+                    connection.execute("""UPDATE provider_lifecycle SET command_target=?,command_digest=?,command_json=?
+                        WHERE request_id=? AND stage=?""", (target, digest, raw, request_id, stage))
+                connection.commit()
+                return digest
+            except sqlite3.DatabaseError:
+                connection.rollback()
+                raise ServiceError("storage_unavailable") from None
+            finally:
+                connection.close()
+
+    def begin_lifecycle_authority(self, request_id: str, stage: str, digest: str) -> bool:
+        if not _sha256(digest):
+            raise ValueError("invalid command digest")
+        with self._writer:
+            connection = self._connect()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                row = connection.execute("SELECT stage,command_digest FROM provider_lifecycle WHERE request_id=?", (request_id,)).fetchone()
+                if row is None:
+                    raise ServiceError("not_found")
+                if row["stage"] == stage and row["command_digest"] == digest:
+                    changed = connection.execute("""UPDATE provider_lifecycle SET authority_state='resume_required'
+                        WHERE request_id=? AND authority_state='fresh'""", (request_id,)).rowcount
+                elif row["stage"] != stage:
+                    raise ServiceError("version_conflict")
+                else:
+                    raise ServiceError("idempotency_conflict")
+                connection.commit()
+                return changed == 1
+            except sqlite3.DatabaseError:
+                connection.rollback()
+                raise ServiceError("storage_unavailable") from None
+            finally:
+                connection.close()
+
+    def complete_lifecycle_step(self, request_id: str, stage: str, next_stage: str,
+                                digest: str, result: dict) -> None:
+        with self._writer:
+            connection = self._connect()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                row = connection.execute("SELECT * FROM provider_lifecycle WHERE request_id=?", (request_id,)).fetchone()
+                if row is None:
+                    raise ServiceError("not_found")
+                encoded = canonical(result)
+                if row["stage"] != stage:
+                    connection.commit(); return
+                if row["command_digest"] != digest:
+                    raise ServiceError("idempotency_conflict")
+                connection.execute("""UPDATE provider_lifecycle SET stage=?,command_target=NULL,
+                    command_digest=NULL,command_json=NULL,authority_state='fresh',last_result_json=?
+                    WHERE request_id=? AND stage=?""", (next_stage, encoded, request_id, stage))
+                connection.commit()
+            except sqlite3.DatabaseError:
+                connection.rollback()
+                raise ServiceError("storage_unavailable") from None
+            finally:
                 connection.close()
 
 

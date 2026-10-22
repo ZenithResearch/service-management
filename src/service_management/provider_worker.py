@@ -13,10 +13,12 @@ from .contracts import canonical
 from .errors import ServiceError
 from .ingress import CommandIngress
 from .native_authority import FileReceiverPolicy, NativeSecSHelper, SecSServiceAuthorityVerifier
+from .provider_lifecycle import BrandPackageLifecycleWorker
 from .secs_intake import NativeSecSIntakeOpener
+from .sdk_adapter import SDKRuntimeAdapter
 from .sqlite_store import SQLiteUnitOfWork
 from .vercel_intake import VercelPollConfig, VercelPollIntake
-from .wallet_service_authority import CastaliaWalletServiceAuthority
+from .wallet_service_authority import CastaliaWalletRuntimeAuthority, CastaliaWalletServiceAuthority
 
 
 def _admission(args) -> AdmissionWorker:
@@ -38,6 +40,39 @@ def _admission(args) -> AdmissionWorker:
     requester = CastaliaRequesterVerifier(load_requester_policy(args.requester_policy))
     port = NativeAuthorizedServicePort(CommandIngress(service), wallet)
     return AdmissionWorker(IntakeStore(args.intake_database), requester, port)
+
+
+def _lifecycle(args) -> BrandPackageLifecycleWorker:
+    receiver_policy = FileReceiverPolicy(args.receiver_policy)
+    receiver_policy()
+    inbound = SecSServiceAuthorityVerifier(
+        NativeSecSHelper(args.native_verifier, args.native_verifier_sha256),
+        receiver_policy,
+    )
+    runtime_authority = CastaliaWalletRuntimeAuthority(
+        executable=args.runtime_wallet_command,
+        executable_sha256=args.runtime_wallet_command_sha256,
+        configuration=args.runtime_wallet_configuration,
+        configuration_sha256=args.runtime_wallet_configuration_sha256,
+        timeout=args.timeout,
+    )
+    runtime = SDKRuntimeAdapter.connect(
+        args.runtime_endpoint, authority=runtime_authority, timeout=args.timeout)
+    service = Service(SQLiteUnitOfWork(args.service_database), verifier=inbound,
+                      environment="production", runtime=runtime)
+    service_authority = CastaliaWalletServiceAuthority(
+        executable=args.wallet_command,
+        executable_sha256=args.wallet_command_sha256,
+        configuration=args.wallet_configuration,
+        configuration_sha256=args.wallet_configuration_sha256,
+        timeout=args.timeout,
+    )
+    port = NativeAuthorizedServicePort(CommandIngress(service), service_authority)
+    process_pin = {"process_id": args.process_id,
+                   "process_version": args.process_version,
+                   "compilation_hash": args.compilation_hash}
+    return BrandPackageLifecycleWorker(IntakeStore(args.intake_database), port,
+                                       runtime, process_pin)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -71,6 +106,30 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--wallet-configuration-sha256", required=True)
         command.add_argument("--limit", type=int, default=16)
         command.add_argument("--timeout", type=float, default=5)
+    for name, help_text in (
+        ("advance-brand-package-once", "advance one fresh command for each retained brand-package request"),
+        ("resume-brand-package-once", "resume only held brand-package authority attempts"),
+    ):
+        command = commands.add_parser(name, help=help_text)
+        command.add_argument("--intake-database", required=True)
+        command.add_argument("--service-database", required=True)
+        command.add_argument("--native-verifier", required=True)
+        command.add_argument("--native-verifier-sha256", required=True)
+        command.add_argument("--receiver-policy", required=True)
+        command.add_argument("--wallet-command", required=True)
+        command.add_argument("--wallet-command-sha256", required=True)
+        command.add_argument("--wallet-configuration", required=True)
+        command.add_argument("--wallet-configuration-sha256", required=True)
+        command.add_argument("--runtime-endpoint", required=True)
+        command.add_argument("--runtime-wallet-command", required=True)
+        command.add_argument("--runtime-wallet-command-sha256", required=True)
+        command.add_argument("--runtime-wallet-configuration", required=True)
+        command.add_argument("--runtime-wallet-configuration-sha256", required=True)
+        command.add_argument("--process-id", required=True)
+        command.add_argument("--process-version", required=True)
+        command.add_argument("--compilation-hash", required=True)
+        command.add_argument("--limit", type=int, default=16)
+        command.add_argument("--timeout", type=float, default=5)
     return parser
 
 
@@ -86,19 +145,26 @@ def main(argv=None) -> int:
             worker = VercelPollIntake.from_sdk(region=args.region, token=None,
                                                config=config, opener=opener, store=store)
             results = asyncio.run(worker.ingest_once())
-        else:
+        elif args.command in {"admit-once", "resume-admission-once"}:
             worker = _admission(args)
             action = worker.resume_once if args.command == "resume-admission-once" else worker.admit_once
+            results = action(limit=args.limit)
+        else:
+            worker = _lifecycle(args)
+            action = worker.resume_once if args.command == "resume-brand-package-once" else worker.advance_once
             results = action(limit=args.limit)
         print(canonical({"schema": "service.provider-worker-result.v1",
                          "command": args.command, "processed": len(results),
                          "results": results}), flush=True)
         return 0
     except UnknownAdmissionOutcome:
+        recovery = ("run resume-brand-package-once for the retained command"
+                    if "brand-package" in args.command else
+                    "run resume-admission-once for the retained command")
         print(canonical({"schema": "service.provider-worker-result.v1",
                          "command": args.command, "processed": 0, "results": [],
                          "error": "unknown_outcome",
-                         "recovery": "run resume-admission-once for retained commands"}), flush=True)
+                         "recovery": recovery}), flush=True)
         return 4
     except ServiceError as error:
         code = error.code if error.code in {"forbidden", "storage_unavailable",
