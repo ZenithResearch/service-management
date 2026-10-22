@@ -1,4 +1,4 @@
-# Service Management TypeScript client 0.6.0
+# Service Management TypeScript client 0.7.0
 
 Status: **integration-ready contract package**. The fixtures are explicitly
 illustrative and do not claim that the Zenith brand-package provider is deployed.
@@ -19,6 +19,7 @@ transport acknowledgement as service admission.
 | `submitEncrypted()` | Provider-catalog v2/v3 `intake.endpoint` | Convenience prepare-and-send wrapper for callers that do not need resumable recovery |
 | `requestCredential()` | Catalog v3 credential endpoint on an explicitly trusted origin | Requests the existing short-lived Wallet Auth v2 credential after presenting an active public Zenith membership credential |
 | `encryptedIntakeAuthorizationBytes()` | Local helper | Produces the exact canonical public gateway request for the outer Wallet credential and presentation |
+| `clientReadAuthorizationBytes()` | Local helper | Produces the exact canonical request bound by status, artifact and receipt Wallet presentations |
 | `status()` | `GET /v1/client/requests/{request_id}` | Adapter projects Service Management plus redacted Runtime state |
 | `artifact()` | descriptor `href` | Publishing component owns bytes; adapter enforces access and digest |
 | `receipt()` | receipt-reference `href` | Named receipt owner remains authoritative |
@@ -28,6 +29,12 @@ resource and body digest. A provider may use a receiver-issued Web session or a
 Wallet/secS presentation. The callback's headers are opaque to this client. The
 package never treats Matrix identity, Nostr transport signing, Tailscale
 membership, email verification, or a provider descriptor as service authority.
+
+For status, artifact and receipt reads, `clientReadAuthorizationBytes()`
+canonicalizes the fixed `service.client-read-authorization.v1` value bound by
+the current short-lived Wallet credential and presentation. The provider checks
+that presentation, then independently checks the requesting Member Key against
+the retained ServiceRequest before reading local Runtime artifacts or receipts.
 
 Discovery is public. Submission, status, artifact and receipt access require the
 provider's receiver-issued authority. The provider verifies its own audience,
@@ -115,8 +122,10 @@ redirects; receiver-issued authorization is supplied only by the explicit
 
 ## Compatibility
 
-Version 0.6.0 reads the exact closed `*.v1` envelopes in this package and closed
-provider-catalog v1, v2 and v3. Unknown fields or versions fail closed.
+Version 0.7.0 reads the exact closed `*.v1` envelopes in this package and closed
+provider-catalog v1, v2 and v3. It adds the v4 contract bundle for the read-
+authorization value while preserving the frozen v1-v3 bundles. Unknown fields
+or versions fail closed.
 Its evidence callback receives the exact canonical intake bytes needed to build
 `service.castalia-requester-evidence.v1`; the view is an owned copy and cannot
 mutate the request passed to the envelope sealer.

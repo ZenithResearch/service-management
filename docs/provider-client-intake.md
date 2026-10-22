@@ -3,6 +3,13 @@
 Status: **source candidate complete; installed native artifacts, real
 operator pins, deployed gateway and live Queue are not production-qualified**.
 
+The local authorized status/artifact/receipt projection is implemented in
+`provider_projection.py` and the framework-neutral HTTP routes are implemented
+in `provider_http.py`. No public synchronization or hosted projection store is
+selected by this source change. The Vercel gateway deployment still exposes
+credential issuance and intake only, so a remote browser cannot use the returned
+`status_url` until an operator-approved public projection transport is composed.
+
 This adapter connects a reachable provider inbox to the existing canonical
 Service Management command boundary. It does not make the queue, dispatcher or
 browser authoritative over a `ServiceRequest`.

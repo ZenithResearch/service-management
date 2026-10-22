@@ -3,7 +3,7 @@ import {readFile} from "node:fs/promises";
 import test from "node:test";
 import {fileURLToPath} from "node:url";
 import {dirname, resolve} from "node:path";
-import {deriveDisplayState, encryptedIntakeAuthorizationBytes, parseClientProjection, parseIntakeResult, parseProviderCatalog, ServiceClient, ServiceClientError, validateIntake, type IntakeRequest, type ProviderCatalogV2, type ProviderCatalogV3} from "../src/index.ts";
+import {clientReadAuthorizationBytes, deriveDisplayState, encryptedIntakeAuthorizationBytes, parseClientProjection, parseIntakeResult, parseProviderCatalog, ServiceClient, ServiceClientError, validateIntake, type IntakeRequest, type ProviderCatalogV2, type ProviderCatalogV3} from "../src/index.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 async function fixture(name: string): Promise<any> { return JSON.parse(await readFile(resolve(here, "../fixtures", name), "utf8")); }
@@ -182,6 +182,16 @@ test("closed provider errors do not become uncertain after explicit denial", asy
 test("provider-returned links cannot move authority to another origin", async () => {
   const client = new ServiceClient({baseUrl: "https://provider.example", authorize: async () => ({Authorization: "test-only"})});
   await assert.rejects(client.status("https://attacker.example/status", "anima-brand-request-01"), /configured provider origin/);
+});
+
+test("client reads bind the exact operation and resource without URL or secrets", () => {
+  const bytes = clientReadAuthorizationBytes({operation: "request.status", resource: "requests/request-1", method: "GET", body_digest: null});
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(bytes)), {
+    schema: "service.client-read-authorization.v1",
+    operation: "request.status",
+    resource: "requests/request-1",
+  });
+  assert.throws(() => clientReadAuthorizationBytes({operation: "artifact.get", resource: "requests/request-1", method: "GET", body_digest: null}), /Invalid client read resource/);
 });
 
 test("unknown or stale runtime projections remain unknown", async () => {

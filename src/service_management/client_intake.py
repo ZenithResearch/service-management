@@ -380,6 +380,30 @@ class IntakeStore:
         finally:
             connection.close()
 
+    def projection_source(self, request_id: str) -> dict | None:
+        """Return the retained local source needed for an authorized client view.
+
+        This is an internal adapter input, not a browser response. It deliberately
+        omits requester evidence, retained commands and recovery state.
+        """
+        if not identifier(request_id):
+            raise ValueError("invalid request id")
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT request_id,idempotency_key,intake_json,transport_receipt_json,"
+                "state,requester_subject,rejection_code FROM client_intake WHERE request_id=?",
+                (request_id,)).fetchone()
+            if row is None:
+                return None
+            return {"request_id": row["request_id"], "idempotency_key": row["idempotency_key"],
+                    "intake": json.loads(row["intake_json"]),
+                    "transport_receipt": json.loads(row["transport_receipt_json"]),
+                    "state": row["state"], "requester_subject": row["requester_subject"],
+                    "rejection_code": row["rejection_code"]}
+        finally:
+            connection.close()
+
     def retain_command(self, request_id: str, command: bytes, requester: VerifiedRequester) -> None:
         digest = _digest(command)
         with self._writer:

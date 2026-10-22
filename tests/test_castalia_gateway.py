@@ -10,8 +10,11 @@ except ImportError:
     Ed25519PrivateKey = None
 
 from service_management.castalia_gateway import (
+    CastaliaClientReadPolicy,
+    CastaliaClientReadVerifier,
     CastaliaEncryptedGatewayVerifier,
     CastaliaGatewayPolicy,
+    client_read_authorization,
     encrypted_intake_authorization,
 )
 from service_management.castalia_requester import (
@@ -116,6 +119,74 @@ class CastaliaEncryptedGatewayVerifierTests(unittest.TestCase):
         self.verify(self.evidence())
         with self.assertRaises(ServiceError):
             self.verify(self.evidence(), now=datetime.fromtimestamp(1_800_000_061, tz=UTC))
+
+
+@unittest.skipIf(Ed25519PrivateKey is None, "install service-management[castalia-verifier]")
+class CastaliaClientReadVerifierTests(unittest.TestCase):
+    def setUp(self):
+        self.request_issuer = Ed25519PrivateKey.from_private_bytes(bytes.fromhex("2c" * 32))
+        self.holder = Ed25519PrivateKey.from_private_bytes(bytes.fromhex("2d" * 32))
+        self.policy_digest = "cd" * 32
+        self.caller = ("browser", "https://anima.example")
+        self.pin = WalletPresentationPin(
+            "zenith-service-authority", "request-test-2", public(self.request_issuer),
+            "zenith-service-management", (self.caller,))
+        self.now = datetime.fromtimestamp(1_800_000_001, tz=UTC)
+        self.verifier = CastaliaClientReadVerifier(
+            CastaliaClientReadPolicy((self.pin,), self.policy_digest, self.caller),
+            clock=lambda: self.now)
+
+    def evidence(self, operation="request.status", resource="requests/anima-brand-request-01"):
+        raw = canonical(client_read_authorization(operation, resource)).encode()
+        disclosure = {"title": "Read service request",
+                      "statements": ["Read this exact service request resource from Zenith."]}
+        claims = {
+            "schema": "castalia.request-credential.v1", "issuer": self.pin.issuer,
+            "key_id": self.pin.key_id, "holder_public_key": public(self.holder),
+            "audience": self.pin.audience,
+            "caller": {"kind": self.caller[0], "id": self.caller[1]},
+            "request_digest_sha256": hashlib.sha256(raw).hexdigest(),
+            "disclosure_digest_sha256": hashlib.sha256(canonical(disclosure).encode()).hexdigest(),
+            "policy_digest_sha256": self.policy_digest, "nonce": "11" * 16,
+            "issued_at": 1_800_000_000, "expires_at": 1_800_000_120,
+        }
+        credential = {"claims": claims, "signature": self.request_issuer.sign(
+            CREDENTIAL_SIGNATURE_DOMAIN + canonical(claims).encode()).hex()}
+        request = {
+            "schema": "castalia.credential-presentation-request.v2",
+            "request_bytes_base64": base64.b64encode(raw).decode(),
+            "disclosure": disclosure, "credential": credential,
+        }
+        unsigned = {
+            "schema": "castalia.credential-presentation.v2",
+            "holder_public_key": public(self.holder), "issuer": claims["issuer"],
+            "key_id": claims["key_id"], "audience": claims["audience"],
+            "caller": claims["caller"], "request_digest_sha256": claims["request_digest_sha256"],
+            "credential_digest_sha256": hashlib.sha256(canonical(credential).encode()).hexdigest(),
+            "disclosure_digest_sha256": claims["disclosure_digest_sha256"], "nonce": "12" * 16,
+            "issued_at": 1_800_000_001, "expires_at": 1_800_000_061,
+        }
+        presentation = dict(unsigned, signature=self.holder.sign(
+            PRESENTATION_SIGNATURE_DOMAIN + canonical(unsigned).encode()).hex())
+        return canonical({"schema": "service.castalia-gateway-presentation.v1",
+                          "presentation_request": request, "presentation": presentation}).encode()
+
+    def test_verifies_exact_client_read_and_rejects_resource_substitution(self):
+        evidence = self.evidence()
+        self.assertEqual(
+            self.verifier.verify("request.status", "requests/anima-brand-request-01", evidence),
+            "did.castalia.key." + public(self.holder))
+        with self.assertRaises(ServiceError):
+            self.verifier.verify("request.status", "requests/anima-brand-request-02", evidence)
+        with self.assertRaises(ServiceError):
+            self.verifier.verify("artifact.get", "artifacts/" + "11" * 32, evidence)
+
+    def test_rejects_unknown_operation_and_noncanonical_evidence(self):
+        with self.assertRaises(ServiceError):
+            self.verifier.verify("artifact.put", "artifacts/" + "11" * 32, self.evidence())
+        with self.assertRaises(ServiceError):
+            self.verifier.verify(
+                "request.status", "requests/anima-brand-request-01", self.evidence() + b"\n")
 
 
 if __name__ == "__main__":

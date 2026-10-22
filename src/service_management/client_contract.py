@@ -20,7 +20,7 @@ def _transport_receipt():
     return _closed({"transport": TEXT, "receipt_id": ID, "recorded_at": TEXT, "expires_at": NULLABLE_TEXT})
 
 
-def client_schema(version: int = 3) -> dict:
+def client_schema(version: int = 4) -> dict:
     pin = _closed({"process_id": TEXT, "process_version": TEXT, "compilation_hash": HASH})
     input_field = _closed({"id": ID, "label": TEXT, "type": {"enum": ["string", "integer", "number", "boolean"]},
                            "required": {"type": "boolean"}, "description": {"type": "string", "maxLength": 4096},
@@ -130,7 +130,7 @@ def client_schema(version: int = 3) -> dict:
     error = _closed({"schema": {"const": "service.client-error.v1"}, "request_id": {"anyOf": [ID, {"type": "null"}]},
                      "error": _closed({"code": {"enum": ["invalid_request", "forbidden", "not_found", "conflict", "expired", "unavailable", "internal_error"]},
                                        "message": TEXT, "retryable": {"type": "boolean"}})})
-    if version not in {1, 2, 3}:
+    if version not in {1, 2, 3, 4}:
         raise ValueError("unsupported client contract version")
     definitions = {"provider_catalog": catalog_v1 if version == 1 else catalog,
                    "artifact_manifest": _artifact(), "intake": intake,
@@ -142,6 +142,12 @@ def client_schema(version: int = 3) -> dict:
                                                             if key != "provider_catalog"}}
     if version >= 3:
         definitions = {**definitions, "provider_catalog_v3": catalog_v3}
+    if version >= 4:
+        definitions = {**definitions, "client_read_authorization": _closed({
+            "schema": {"const": "service.client-read-authorization.v1"},
+            "operation": {"enum": ["request.status", "artifact.get", "receipt.get"]},
+            "resource": TEXT,
+        })}
     return {"$schema": "https://json-schema.org/draft/2020-12/schema",
             "$id": f"urn:service-management:client:v{version}",
             "title": f"Service Management browser client contracts v{version}",
@@ -156,3 +162,8 @@ def client_schema_v1() -> dict:
 def client_schema_v2() -> dict:
     """Frozen contract suite previously published to Anima."""
     return client_schema(2)
+
+
+def client_schema_v3() -> dict:
+    """Frozen contract suite previously published to Anima."""
+    return client_schema(3)

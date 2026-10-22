@@ -24,6 +24,8 @@ from .errors import ServiceError
 
 AUTHORIZATION_SCHEMA = "service.encrypted-intake-authorization.v1"
 PRESENTATION_SCHEMA = "service.castalia-gateway-presentation.v1"
+CLIENT_READ_SCHEMA = "service.client-read-authorization.v1"
+CLIENT_READ_OPERATIONS = {"request.status", "artifact.get", "receipt.get"}
 
 
 def gateway_requester_schema() -> dict:
@@ -159,5 +161,69 @@ class CastaliaEncryptedGatewayVerifier:
                 accepted_at=math.floor(now.timestamp()), expected_caller=self.policy.caller)
             subject = "did.castalia.key." + holder
             return VerifiedGatewayRequester(subject, canonical(value).encode("utf-8"))
+        except (KeyError, TypeError, ValueError, UnicodeError, OverflowError, json.JSONDecodeError):
+            raise ServiceError("forbidden") from None
+
+
+def client_read_authorization(operation: str, resource: str) -> dict:
+    if (operation not in CLIENT_READ_OPERATIONS or not isinstance(resource, str)
+            or not 1 <= len(resource) <= 4096 or "\0" in resource):
+        raise ValueError("invalid client read authorization")
+    prefixes = {"request.status": "requests/", "artifact.get": "artifacts/",
+                "receipt.get": ("process-runtime/receipts/", "service-management/receipts/",
+                                "secs/receipts/")}
+    expected = prefixes[operation]
+    if ((isinstance(expected, str) and not resource.startswith(expected))
+            or (isinstance(expected, tuple) and not resource.startswith(expected))):
+        raise ValueError("invalid client read resource")
+    return {"schema": CLIENT_READ_SCHEMA, "operation": operation, "resource": resource}
+
+
+@dataclass(frozen=True)
+class CastaliaClientReadPolicy:
+    presentation_pins: tuple[WalletPresentationPin, ...]
+    policy_digest_sha256: str
+    caller: tuple[str, str]
+
+    def __post_init__(self):
+        if (not self.presentation_pins or not isinstance(self.policy_digest_sha256, str)
+                or len(self.policy_digest_sha256) != 64
+                or any(c not in "0123456789abcdef" for c in self.policy_digest_sha256)
+                or self.caller not in {caller for pin in self.presentation_pins
+                                       for caller in pin.callers}):
+            raise ValueError("invalid Castalia client-read policy")
+
+
+class CastaliaClientReadVerifier:
+    """Verify a fresh Wallet presentation over one exact browser read."""
+
+    def __init__(self, policy: CastaliaClientReadPolicy,
+                 *, clock=lambda: datetime.now().astimezone()):
+        if Ed25519PublicKey is None:
+            raise RuntimeError("install service-management[castalia-verifier]")
+        self.policy, self.clock = policy, clock
+
+    def verify(self, operation: str, resource: str, presentation: bytes) -> str:
+        try:
+            request_bytes = canonical(client_read_authorization(operation, resource)).encode("utf-8")
+            if not isinstance(presentation, bytes) or not 0 < len(presentation) <= MAX_EVIDENCE_BODY:
+                raise ValueError("invalid presentation size")
+            value = json.loads(presentation.decode("utf-8"), object_pairs_hook=_pairs,
+                parse_float=lambda _: (_ for _ in ()).throw(ValueError()),
+                parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
+            if canonical(value).encode("utf-8") != presentation:
+                raise ValueError("client-read presentation is not canonical")
+            value = _exact(value, {"schema", "presentation_request", "presentation"})
+            if value["schema"] != PRESENTATION_SCHEMA:
+                raise ValueError("unsupported client-read presentation")
+            now = self.clock()
+            if not isinstance(now, datetime) or now.tzinfo is None:
+                raise ValueError("client-read clock must be timezone-aware")
+            holder = verify_wallet_presentation(
+                request_bytes, value["presentation_request"], value["presentation"],
+                presentation_pins=self.policy.presentation_pins,
+                policy_digest_sha256=self.policy.policy_digest_sha256,
+                accepted_at=math.floor(now.timestamp()), expected_caller=self.policy.caller)
+            return "did.castalia.key." + holder
         except (KeyError, TypeError, ValueError, UnicodeError, OverflowError, json.JSONDecodeError):
             raise ServiceError("forbidden") from None

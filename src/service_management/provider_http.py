@@ -24,6 +24,10 @@ MAX_AUTHORIZATION = 32_768
 CLIENT_ERRORS = {
     "invalid_command": (400, "invalid_request", "The request is invalid.", False),
     "forbidden": (403, "forbidden", "The request is not authorized.", False),
+    "not_found": (404, "not_found", "The requested resource does not exist.", False),
+    "runtime_unavailable": (503, "unavailable", "Authoritative provider state is temporarily unavailable.", True),
+    "projection_gap": (503, "unavailable", "Authoritative provider state requires reconciliation.", True),
+    "runtime_contract": (500, "internal_error", "The provider could not verify authoritative state.", True),
     "internal_error": (500, "internal_error", "The provider could not complete the request.", True),
 }
 BASE64URL = re.compile(r"^[A-Za-z0-9_-]+$", re.ASCII)
@@ -59,12 +63,14 @@ class ProviderHttpConfig:
 
 
 class ProviderHttpApplication:
-    """Expose only the two public browser commands required by the first path."""
+    """Expose bounded browser commands and optional authoritative client reads."""
 
     def __init__(self, config: ProviderHttpConfig, credential_issuer: ReceiverCredentialIssuer,
-                 intake_gateway: EncryptedIntakeGateway):
+                 intake_gateway: EncryptedIntakeGateway, *, client_reader=None,
+                 read_authorizer=None):
         self.config, self.credential_issuer, self.intake_gateway = (
             config, credential_issuer, intake_gateway)
+        self.client_reader, self.read_authorizer = client_reader, read_authorizer
 
     async def handle(self, request: ProviderHttpRequest) -> ProviderHttpResponse:
         request_id = None
@@ -75,6 +81,8 @@ class ProviderHttpApplication:
                 raise ServiceError("forbidden")
             if request.method == "OPTIONS":
                 return self._response(204, b"")
+            if request.method == "GET":
+                return self._read(request.path, headers)
             if request.method != "POST":
                 return self._error(405, "invalid_request", "The method is not supported.", False, None)
             request_id = headers.get("x-zenith-request-id")
@@ -119,6 +127,35 @@ class ProviderHttpApplication:
         result = await self.intake_gateway.submit(
             body, submission=submission, requester_presentation=presentation)
         return self._json(202, result)
+
+    def _read(self, path: str, headers: dict[str, str]) -> ProviderHttpResponse:
+        if self.client_reader is None or self.read_authorizer is None:
+            raise ServiceError("runtime_unavailable")
+        authorization = headers.get("authorization", "")
+        if not authorization.startswith("Castalia "):
+            raise ServiceError("forbidden")
+        presentation = self._base64url(authorization[9:])
+        status = re.fullmatch(r"/v1/client/requests/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})", path)
+        artifact = re.fullmatch(r"/v1/client/requests/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/artifacts/([a-f0-9]{64})", path)
+        receipt = re.fullmatch(r"/v1/client/requests/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/receipts/(process-runtime|service-management|secs)/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})", path)
+        if status:
+            request_id = status.group(1)
+            subject = self.read_authorizer.verify(
+                "request.status", f"requests/{request_id}", presentation)
+            return self._json(200, self.client_reader.status(request_id, subject))
+        if artifact:
+            request_id, content_hash = artifact.groups()
+            subject = self.read_authorizer.verify(
+                "artifact.get", f"artifacts/{content_hash}", presentation)
+            media_type, body = self.client_reader.artifact(request_id, content_hash, subject)
+            return self._response(200, body, content_type=media_type)
+        if receipt:
+            request_id, owner, receipt_id = receipt.groups()
+            subject = self.read_authorizer.verify(
+                "receipt.get", f"{owner}/receipts/{receipt_id}", presentation)
+            return self._response(200, self.client_reader.receipt(
+                request_id, owner, receipt_id, subject), content_type="application/json")
+        return self._error(404, "not_found", "The provider route does not exist.", False, None)
 
     @staticmethod
     def _headers(values: Iterable[tuple[str, str]]) -> dict[str, str]:
@@ -166,13 +203,13 @@ class ProviderHttpApplication:
                                    "error": {"code": code, "message": message,
                                              "retryable": retryable}})
 
-    def _response(self, status: int, body: bytes) -> ProviderHttpResponse:
+    def _response(self, status: int, body: bytes, *, content_type="application/json") -> ProviderHttpResponse:
         headers = [
             ("Access-Control-Allow-Origin", self.config.browser_origin),
-            ("Access-Control-Allow-Methods", "POST, OPTIONS"),
+            ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
             ("Access-Control-Allow-Headers", "Authorization, Content-Type, Content-Length, Idempotency-Key, X-Zenith-Request-Id, X-Zenith-Provider-Id, X-Zenith-Intake-SHA256, X-Zenith-Envelope-Key-Id, X-Zenith-Envelope-Expires-At"),
             ("Cache-Control", "no-store"), ("Vary", "Origin"),
         ]
         if body:
-            headers.extend((("Content-Type", "application/json"), ("Content-Length", str(len(body)))))
+            headers.extend((("Content-Type", content_type), ("Content-Length", str(len(body)))))
         return ProviderHttpResponse(status, tuple(headers), body)

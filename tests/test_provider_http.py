@@ -42,6 +42,23 @@ class Gateway:
                 "status_url": f"/v1/client/requests/{submission.request_id}"}
 
 
+class ReadAuthorizer:
+    def __init__(self): self.calls = []
+    def verify(self, operation, resource, presentation):
+        self.calls.append((operation, resource, presentation))
+        return "did.castalia.key.member-1"
+
+
+class Reader:
+    def status(self, request_id, subject):
+        return {"schema": "service.client-projection.v1", "request_id": request_id,
+                "subject_for_test": subject}
+    def artifact(self, request_id, content_hash, subject):
+        return "text/plain", b"artifact"
+    def receipt(self, request_id, owner, receipt_id, subject):
+        return b'{"receipt":true}'
+
+
 def headers(*items):
     return (("Origin", "https://anima.example"), *items)
 
@@ -118,6 +135,37 @@ class ProviderHttpApplicationTests(unittest.IsolatedAsyncioTestCase):
             "OPTIONS", "/v1/client/requests", headers(), b""))
         self.assertEqual(response.status, 204)
         self.assertEqual(response.body, b"")
+
+    async def test_authorized_status_artifact_and_receipt_reads_are_separate(self):
+        authorizer, reader = ReadAuthorizer(), Reader()
+        app = ProviderHttpApplication(
+            ProviderHttpConfig("https://anima.example"), self.issuer, self.gateway,
+            client_reader=reader, read_authorizer=authorizer)
+        proof = base64.urlsafe_b64encode(b"proof").decode().rstrip("=")
+        values = []
+        for path in (
+            "/v1/client/requests/request-1",
+            "/v1/client/requests/request-1/artifacts/" + "a" * 64,
+            "/v1/client/requests/request-1/receipts/process-runtime/receipt-1",
+        ):
+            values.append(await app.handle(ProviderHttpRequest(
+                "GET", path, headers(("Authorization", "Castalia " + proof)), b"")))
+        self.assertEqual([value.status for value in values], [200, 200, 200])
+        self.assertEqual(values[1].body, b"artifact")
+        self.assertEqual(dict(values[1].headers)["Content-Type"], "text/plain")
+        self.assertEqual([call[:2] for call in authorizer.calls], [
+            ("request.status", "requests/request-1"),
+            ("artifact.get", "artifacts/" + "a" * 64),
+            ("receipt.get", "process-runtime/receipts/receipt-1"),
+        ])
+
+    async def test_read_route_without_projection_or_authority_is_unavailable(self):
+        proof = base64.urlsafe_b64encode(b"proof").decode().rstrip("=")
+        response = await self.app.handle(ProviderHttpRequest(
+            "GET", "/v1/client/requests/request-1",
+            headers(("Authorization", "Castalia " + proof)), b""))
+        self.assertEqual(response.status, 503)
+        self.assertTrue(json.loads(response.body)["error"]["retryable"])
 
 
 if __name__ == "__main__":

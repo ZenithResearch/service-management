@@ -1,6 +1,6 @@
 {
   "name": "@zenith/service-management-client",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Provider-neutral browser client for Zenith Service Management projections",
   "type": "module",
   "exports": {
