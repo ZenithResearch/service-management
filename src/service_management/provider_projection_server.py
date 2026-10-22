@@ -75,6 +75,7 @@ class ProjectionComposition:
         except Exception:
             pass
         return {"schema": "service.provider-projection-readiness.v1",
+                "service": "service-management-provider-projection",
                 "ready": all(checks.values()), "checks": checks}
 
 
@@ -98,7 +99,8 @@ def handler_for(composition: ProjectionComposition):
 
         def _health(self, readiness: bool):
             value = composition.readiness() if readiness else {
-                "schema": "service.provider-projection-liveness.v1", "live": True}
+                "schema": "service.provider-projection-liveness.v1",
+                "service": "service-management-provider-projection", "live": True}
             body = canonical(value).encode("utf-8")
             status = 200 if not readiness or value["ready"] else 503
             self._send(status, (("Content-Type", "application/json"),
