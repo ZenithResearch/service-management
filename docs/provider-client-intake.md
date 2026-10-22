@@ -295,8 +295,18 @@ creates the ordinary durable Service outbox handoff; the separately configured
 outbox worker delivers that exact command to Runtime. Neither lifecycle command
 infers execution completion from the handoff acknowledgement.
 
-The successful `approved` result includes an `activation` object with the exact
-64-hex Runtime handoff ID and its deterministic `handoff-<first-48-hex>` Run ID.
-The installer must bind Runtime authority to both values before delivering the
-retained Service handoff; inventing either identity or granting only the Run is
-not sufficient for `handoff.consume`.
+`activation-brand-package-once` reads one admitted, unfinished intake without
+issuing authority or changing either database. It returns the exact future
+64-hex Runtime handoff ID and deterministic `handoff-<first-48-hex>` Run ID.
+The handoff event identity is derived from the stable Case and immutable plan
+revision IDs, so the later `approved` result must return the same activation.
+The installer binds Runtime authority to both previewed values before lifecycle
+artifact writes; inventing either identity or granting only the Run is not
+sufficient for `artifact.put` and `handoff.consume`.
+
+After the installer has bound that authority and explicitly opened Runtime
+new-run admission, `deliver-handoff-once --handoff-id <exact-64-hex>` scans at
+most 10,000 pending outbox records and reconciles only the matching handoff. It
+uses the exact Runtime Wallet command/configuration pins. A prior unknown result
+is recovered through the SDK's explicit resume path; a different pending
+handoff is never consumed by that invocation.

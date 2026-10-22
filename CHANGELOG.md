@@ -12,6 +12,9 @@
   reviewed brief and reference manifest as content-addressed Runtime artifacts,
   and approves only the configured immutable process pin. Every Service and
   Runtime mutation has an explicit retained-command resume path.
+- Derive the first service's outbox identity from its stable Case and immutable
+  plan revision, expose a read-only activation preview, and deliver only the
+  exact retained handoff selected by finite Runtime authority.
 - Add provider-catalog v3, dependency-free TypeScript client v0.6.0 and fixtures
   for provider-neutral discovery, reviewed intake, authoritative request/Case
   projection, deliverables and canonical receipt references.

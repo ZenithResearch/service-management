@@ -15,6 +15,7 @@ import json
 from .client_intake import Intake, IntakeStore, ServiceCommandPort, UnknownAdmissionOutcome
 from .contracts import canonical
 from .errors import ServiceError
+from .planning import expected_handoff_event_id
 from .runtime_port import RuntimeCallError, RuntimeClient, content_digest, expected_run_id, pin
 
 
@@ -32,6 +33,20 @@ def _stable(request_id: str, label: str) -> str:
 def _artifact(content: bytes) -> dict:
     return {"content_hash": hashlib.sha256(content).hexdigest(),
             "byte_length": len(content), "media_type": "application/json"}
+
+
+def brand_package_activation(intake: Intake) -> dict:
+    """Preview the exact future Runtime identity without issuing authority or mutating state."""
+    if (intake.provider_id != "zenith"
+            or intake.service_id != "zenith.anima.brand-package"
+            or intake.service_version != "1.0.0"
+            or not isinstance(intake.values.get("organization_name"), str)
+            or not intake.values["organization_name"].strip()):
+        raise ServiceError("invalid_command")
+    event_id = expected_handoff_event_id(
+        _stable(intake.request_id, "case"), _stable(intake.request_id, "revision"))
+    identity = {"source": "service-management", "event_id": event_id}
+    return {"handoff_id": content_digest(identity), "run_id": expected_run_id(identity)}
 
 
 class BrandPackageLifecycleWorker:
@@ -187,9 +202,10 @@ class BrandPackageLifecycleWorker:
             if next_stage == "approved":
                 handoff = result["handoff"]
                 identity = {"source": "service-management", "event_id": handoff["event_id"]}
-                completed["activation"] = {
-                    "handoff_id": content_digest(identity),
-                    "run_id": expected_run_id(identity),
-                }
+                completed["activation"] = brand_package_activation(intake)
+                if completed["activation"] != {
+                        "handoff_id": content_digest(identity),
+                        "run_id": expected_run_id(identity)}:
+                    raise ServiceError("internal_error")
             results.append(completed)
         return results

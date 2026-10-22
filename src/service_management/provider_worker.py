@@ -10,13 +10,15 @@ import stat
 
 from .application import Service
 from .castalia_requester import CastaliaRequesterVerifier, load_requester_policy
-from .client_intake import (AdmissionWorker, IntakeStore, NativeAuthorizedServicePort,
+from .client_intake import (AdmissionWorker, Intake, IntakeStore, NativeAuthorizedServicePort,
                             UnknownAdmissionOutcome)
 from .contracts import canonical
+from .delivery import OutboxDelivery
 from .errors import ServiceError
 from .ingress import CommandIngress
 from .native_authority import FileReceiverPolicy, NativeSecSHelper, SecSServiceAuthorityVerifier
-from .provider_lifecycle import BrandPackageLifecycleWorker
+from .provider_lifecycle import BrandPackageLifecycleWorker, brand_package_activation
+from .runtime_port import content_digest
 from .secs_intake import NativeSecSIntakeOpener
 from .sdk_adapter import SDKRuntimeAdapter
 from .sqlite_store import SQLiteUnitOfWork
@@ -116,6 +118,35 @@ def _lifecycle(args) -> BrandPackageLifecycleWorker:
                                        runtime, process_pin)
 
 
+def _delivery(args) -> OutboxDelivery:
+    authority = CastaliaWalletRuntimeAuthority(
+        executable=args.runtime_wallet_command,
+        executable_sha256=args.runtime_wallet_command_sha256,
+        configuration=args.runtime_wallet_configuration,
+        configuration_sha256=args.runtime_wallet_configuration_sha256,
+        timeout=args.timeout,
+    )
+    runtime = SDKRuntimeAdapter.connect(args.runtime_endpoint, authority=authority, timeout=args.timeout)
+    return OutboxDelivery(SQLiteUnitOfWork(args.service_database), runtime)
+
+
+def _deliver_exact(worker: OutboxDelivery, handoff_id: str) -> list[dict]:
+    if (not isinstance(handoff_id, str) or len(handoff_id) != 64
+            or any(character not in "0123456789abcdef" for character in handoff_id)):
+        raise ValueError("invalid handoff identity")
+    after = ""
+    for _ in range(100):
+        rows = worker.pending(after=after, limit=100)
+        for row in rows:
+            candidate = content_digest({"source": "service-management", "event_id": row["event_id"]})
+            if candidate == handoff_id:
+                return [worker.reconcile(row["event_id"])]
+        if len(rows) < 100:
+            break
+        after = rows[-1]["event_id"]
+    return []
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Pull encrypted provider requests or admit retained requests through native authority.")
@@ -148,6 +179,20 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--wallet-configuration-sha256", required=True)
         command.add_argument("--limit", type=int, default=16)
         command.add_argument("--timeout", type=float, default=5)
+    delivery = commands.add_parser(
+        "deliver-handoff-once", help="deliver one exact retained Service handoff to Runtime")
+    delivery.add_argument("--service-database", required=True)
+    delivery.add_argument("--runtime-endpoint", required=True)
+    delivery.add_argument("--runtime-wallet-command", required=True)
+    delivery.add_argument("--runtime-wallet-command-sha256", required=True)
+    delivery.add_argument("--runtime-wallet-configuration", required=True)
+    delivery.add_argument("--runtime-wallet-configuration-sha256", required=True)
+    delivery.add_argument("--handoff-id", required=True)
+    delivery.add_argument("--timeout", type=float, default=5)
+    activation = commands.add_parser(
+        "activation-brand-package-once",
+        help="preview one exact future brand-package handoff without issuing authority")
+    activation.add_argument("--intake-database", required=True)
     for name, help_text in (
         ("advance-brand-package-once", "advance one fresh command for each retained brand-package request"),
         ("resume-brand-package-once", "resume only held brand-package authority attempts"),
@@ -191,10 +236,18 @@ def main(argv=None) -> int:
             worker = _admission(args)
             action = worker.resume_once if args.command == "resume-admission-once" else worker.admit_once
             results = action(limit=args.limit)
-        else:
+        elif args.command == "activation-brand-package-once":
+            rows = IntakeStore(args.intake_database).activation_pending(limit=1)
+            results = [{"request_id": row["request_id"], "stage": row["stage"],
+                        "activation": brand_package_activation(
+                            Intake.parse(row["intake_json"].encode("utf-8")))}
+                       for row in rows]
+        elif args.command in {"advance-brand-package-once", "resume-brand-package-once"}:
             worker = _lifecycle(args)
             action = worker.resume_once if args.command == "resume-brand-package-once" else worker.advance_once
             results = action(limit=args.limit)
+        else:
+            results = _deliver_exact(_delivery(args), args.handoff_id)
         print(canonical({"schema": "service.provider-worker-result.v1",
                          "command": args.command, "processed": len(results),
                          "results": results}), flush=True)

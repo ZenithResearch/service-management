@@ -506,6 +506,19 @@ class IntakeStore:
         finally:
             connection.close()
 
+    def activation_pending(self, *, limit: int = 16) -> list[dict]:
+        """List admitted unfinished lifecycle rows for read-only activation preview."""
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("invalid lifecycle batch")
+        connection = self._connect()
+        try:
+            return [dict(row) for row in connection.execute("""SELECT i.intake_json,l.*
+                FROM provider_lifecycle l JOIN client_intake i USING(request_id)
+                WHERE i.state='admitted' AND l.stage!='approved'
+                ORDER BY l.request_id LIMIT ?""", (limit,))]
+        finally:
+            connection.close()
+
     def lifecycle_status(self, request_id: str) -> dict | None:
         if not identifier(request_id):
             raise ValueError("invalid request id")

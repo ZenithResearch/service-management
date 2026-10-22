@@ -11,6 +11,7 @@ from service_management import Service, ServiceError
 from service_management.authority import LocalDevUntrustedVerifier
 from service_management.contracts import canonical
 from service_management.delivery import OutboxDelivery
+from service_management.planning import expected_handoff_event_id
 from service_management.projection import RuntimeProjection
 from service_management.runtime_port import RuntimeCallError, content_digest, expected_run_id
 from service_management.sqlite_store import MIGRATION_1, SQLiteUnitOfWork
@@ -143,6 +144,8 @@ class ServiceIntegrationTests(unittest.TestCase):
         self.assertEqual(result["case"]["current_plan_revision_id"], "revision-1")
         self.assertEqual(result["plan_revision"]["author"], "local-dev-untrusted")
         self.assertEqual(result["handoff"]["state"], "pending")
+        self.assertEqual(result["handoff"]["event_id"],
+                         expected_handoff_event_id("case-1", "revision-1"))
         row = self.store.transact(lambda tx: tx.get_handoff(result["handoff"]["event_id"]))
         self.assertEqual(row["command"]["payload"]["pin"], self.pin)
         self.assertEqual(self.runtime.sent, [])

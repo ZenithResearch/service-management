@@ -51,6 +51,20 @@ def pull_args(token_file):
             "--intake-opener-sha256", "4" * 64, "--oidc-token-file", str(token_file)]
 
 
+def delivery_args(handoff_id):
+    return ["deliver-handoff-once", "--service-database", "/private/service.db",
+            "--runtime-endpoint", "http://127.0.0.1:8092",
+            "--runtime-wallet-command", "/private/castalia-wallet-service",
+            "--runtime-wallet-command-sha256", "2" * 64,
+            "--runtime-wallet-configuration", "/private/runtime-wallet.json",
+            "--runtime-wallet-configuration-sha256", "4" * 64,
+            "--handoff-id", handoff_id]
+
+
+def activation_args():
+    return ["activation-brand-package-once", "--intake-database", "/private/intake.db"]
+
+
 class ProviderWorkerTests(unittest.TestCase):
     def run_worker(self, command, worker):
         output = io.StringIO()
@@ -96,6 +110,23 @@ class ProviderWorkerTests(unittest.TestCase):
             self.assertEqual(main(lifecycle_args("resume-brand-package-once")), 0)
         self.assertEqual(worker.calls, [("issue", 16), ("resume", 16)])
 
+    def test_activation_preview_is_read_only_and_returns_the_exact_future_identity(self):
+        store = type("Store", (), {"activation_pending": staticmethod(
+            lambda **kwargs: [{"request_id": "request-1", "stage": "request_admitted",
+                               "intake_json": "{}"}])})()
+        expected = {"handoff_id": "a" * 64, "run_id": "handoff-" + "a" * 48}
+        output = io.StringIO()
+        with patch("service_management.provider_worker.IntakeStore", return_value=store), \
+                patch("service_management.provider_worker.Intake.parse", return_value=object()), \
+                patch("service_management.provider_worker.brand_package_activation",
+                      return_value=expected), contextlib.redirect_stdout(output):
+            self.assertEqual(main(activation_args()), 0)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["processed"], 1)
+        self.assertEqual(result["results"], [{"request_id": "request-1",
+                                              "stage": "request_admitted",
+                                              "activation": expected}])
+
     def test_pull_reads_owner_private_token_and_passes_it_only_to_sdk(self):
         with tempfile.TemporaryDirectory() as directory:
             token_file = Path(directory) / "oidc-token"
@@ -123,6 +154,37 @@ class ProviderWorkerTests(unittest.TestCase):
             link.symlink_to(token_file)
             with self.assertRaises(ValueError):
                 _oidc_token(str(link))
+
+    def test_delivery_selects_only_the_exact_handoff_and_reconciles_it(self):
+        from service_management.runtime_port import content_digest
+        event_id = "service-event-1"
+        handoff_id = content_digest({"source": "service-management", "event_id": event_id})
+
+        class Worker:
+            def __init__(self): self.reconciled = []
+            def pending(self, *, after, limit):
+                return [{"event_id": "other-event"}, {"event_id": event_id}]
+            def reconcile(self, selected):
+                self.reconciled.append(selected)
+                return {"event_id": selected, "state": "started"}
+
+        worker, output = Worker(), io.StringIO()
+        with patch("service_management.provider_worker._delivery", return_value=worker), \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(main(delivery_args(handoff_id)), 0)
+        result = json.loads(output.getvalue())
+        self.assertEqual((result["processed"], worker.reconciled), (1, [event_id]))
+
+    def test_delivery_does_not_consume_a_different_pending_handoff(self):
+        worker = type("Worker", (), {
+            "pending": staticmethod(lambda **kwargs: [{"event_id": "other-event"}]),
+            "reconcile": staticmethod(lambda selected: self.fail("wrong handoff consumed")),
+        })()
+        output = io.StringIO()
+        with patch("service_management.provider_worker._delivery", return_value=worker), \
+                contextlib.redirect_stdout(output):
+            self.assertEqual(main(delivery_args("a" * 64)), 0)
+        self.assertEqual(json.loads(output.getvalue())["processed"], 0)
 
 
 async def _async(value):
