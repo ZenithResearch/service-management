@@ -8,6 +8,7 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Iterable
+from urllib.parse import urlsplit
 
 from .castalia_credential import ReceiverCredentialIssuer
 from .client_gateway import (
@@ -61,14 +62,19 @@ class ProviderHttpConfig:
     status_base_url: str | None = None
 
     def __post_init__(self):
-        if (not isinstance(self.browser_origin, str) or not self.browser_origin.startswith("https://")
-                or self.browser_origin.endswith("/") or any(c in self.browser_origin for c in "?#")
+        parsed_origin = urlsplit(self.browser_origin) if isinstance(self.browser_origin, str) else None
+        loopback_http = (parsed_origin is not None and parsed_origin.scheme == "http"
+                         and parsed_origin.hostname in {"127.0.0.1", "::1"})
+        if (parsed_origin is None or parsed_origin.scheme not in {"http", "https"}
+                or parsed_origin.scheme == "http" and not loopback_http
+                or not parsed_origin.hostname or parsed_origin.username or parsed_origin.password
+                or parsed_origin.path or parsed_origin.query or parsed_origin.fragment
+                or self.browser_origin.endswith("/")
                 or not self.credential_path.startswith("/") or not self.intake_path.startswith("/")
                 or not self.reference_path.startswith("/")
                 or len({self.credential_path, self.intake_path, self.reference_path}) != 3):
             raise ValueError("invalid provider HTTP configuration")
         if self.status_base_url is not None:
-            from urllib.parse import urlsplit
             parsed = urlsplit(self.status_base_url)
             segments = parsed.path.split("/")[1:]
             if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password

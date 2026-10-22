@@ -87,6 +87,16 @@ class ProviderHttpApplicationTests(unittest.IsolatedAsyncioTestCase):
             ProviderHttpConfig("https://anima.example"), self.issuer, self.gateway,
             reference_gateway=self.gateway)
 
+    def test_browser_origin_allows_only_https_or_exact_numeric_loopback_http(self):
+        self.assertEqual(ProviderHttpConfig("http://127.0.0.1:4337").browser_origin,
+                         "http://127.0.0.1:4337")
+        self.assertEqual(ProviderHttpConfig("http://[::1]:4337").browser_origin,
+                         "http://[::1]:4337")
+        for origin in ("http://anima.example", "http://localhost:4337",
+                       "http://127.0.0.1:4337/path", "https://user@anima.example"):
+            with self.subTest(origin=origin), self.assertRaises(ValueError):
+                ProviderHttpConfig(origin)
+
     async def test_credential_issuance_has_exact_origin_and_no_ambient_credentials(self):
         body = b'{"fixture":true}'
         result = await self.app.handle(ProviderHttpRequest(
