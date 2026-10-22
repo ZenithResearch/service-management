@@ -20,5 +20,6 @@ jobs:
         with:
           python-version: '3.12.12'
       - run: python -m pip install --require-hashes -r runtime-source/requirements-ci.lock
-      - run: python -m pip install --no-deps --no-build-isolation ./runtime-source .
+      - run: python -m pip install --no-deps --no-build-isolation ./runtime-source
+      - run: python -m pip install --no-build-isolation '.[vercel-queue,castalia-verifier]'
       - run: PYTHONPATH=src python -m unittest discover -s tests -v

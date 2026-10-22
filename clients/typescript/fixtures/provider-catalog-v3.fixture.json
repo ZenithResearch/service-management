@@ -1,0 +1,116 @@
+{
+  "schema": "service.provider-catalog.v3",
+  "provider": {
+    "id": "zenith",
+    "name": "Zenith",
+    "version": "fixture-3"
+  },
+  "services": [
+    {
+      "id": "zenith.anima.brand-package",
+      "version": "fixture-1",
+      "name": "Brand package",
+      "summary": "Fixture service for frontend integration; it is not a live availability claim.",
+      "availability": "available",
+      "inputs": [
+        {
+          "id": "organization_name",
+          "label": "Organization name",
+          "type": "string",
+          "required": true,
+          "description": "The name currently used by the organization.",
+          "max_length": 200
+        },
+        {
+          "id": "brand_brief",
+          "label": "Reviewed brief",
+          "type": "string",
+          "required": true,
+          "description": "The approved brief text.",
+          "max_length": 12000
+        }
+      ],
+      "accepted_references": [
+        {
+          "id": "visual-reference",
+          "label": "Visual reference",
+          "required": false,
+          "media_types": [
+            "image/png",
+            "image/jpeg",
+            "application/pdf"
+          ],
+          "max_bytes": 20971520
+        }
+      ],
+      "expected_deliverables": [
+        {
+          "id": "brand-package",
+          "label": "Brand package",
+          "media_types": [
+            "application/zip",
+            "application/pdf"
+          ],
+          "multiple": false
+        }
+      ],
+      "process": {
+        "process_id": "zenith.anima.brand-package",
+        "process_version": "fixture-1",
+        "compilation_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "communication": [
+        "provider-status",
+        "matrix"
+      ]
+    }
+  ],
+  "authority": {
+    "submission": "receiver-issued",
+    "status": "receiver-issued",
+    "artifacts": "receiver-issued"
+  },
+  "intake": {
+    "endpoint": "https://intake.zenith.invalid/v1/client/requests",
+    "max_retention_seconds": 604800,
+    "envelope": {
+      "schema": "service.intake-envelope.v1",
+      "algorithm": "x25519-hkdf-sha256-chacha20poly1305",
+      "recipient_key_id": "tunnel:x25519:0f6d2553ff0c0f447ae202edd84383e1",
+      "recipient_public_key_hex": "13be4feaeaf204c7fd3358fc9c00721881d174278128227ec674f37f7fe97b6d",
+      "not_before": "2026-10-01T00:00:00.000Z",
+      "not_after": "2026-12-31T00:00:00.000Z"
+    }
+  },
+  "requester": {
+    "evidence_schema": "service.castalia-requester-evidence.v1",
+    "membership": {
+      "credential_schema": "castalia.zenith-membership-credential.v3",
+      "issuer_origin": "https://membership.zenith.invalid",
+      "roots": [
+        {
+          "issuer_id": "zenith-research",
+          "key_id": "membership-1",
+          "public_key_hex": "2121212121212121212121212121212121212121212121212121212121212121"
+        }
+      ]
+    },
+    "credential": {
+      "endpoint": "https://credentials.zenith.invalid/v1/request-credential",
+      "issuance_schema": "service.castalia-credential-issuance.v1",
+      "credential_schema": "castalia.request-credential.v1",
+      "presentation_protocol": "castalia.wallet-auth.v2",
+      "issuer": "zenith-service-authority",
+      "key_id": "request-1",
+      "public_key_hex": "3232323232323232323232323232323232323232323232323232323232323232",
+      "audience": "zenith-service-management",
+      "policy_digest_sha256": "4343434343434343434343434343434343434343434343434343434343434343",
+      "callers": [
+        {
+          "kind": "browser",
+          "id": "https://anima.example"
+        }
+      ]
+    }
+  }
+}

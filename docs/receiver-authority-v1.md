@@ -117,6 +117,9 @@ service-management --database /operator/service/service.db \
 This is configuration syntax, not approval to provision, activate or trust an
 identity. No sample production policy or synthetic trust root is supplied.
 
+The inbound receiver tuple above is independent from the optional outbound
+Runtime Wallet tuple documented in [runtime workers](runtime-workers.md).
+
 ## Synthetic-only verification
 
 `tests/fixtures/native-secs-v4.json` contains public signed test fixtures. They

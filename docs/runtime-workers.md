@@ -8,12 +8,13 @@ Existing direct `Service`, `OutboxDelivery`, `RuntimeProjection`, and SDK adapte
 usage remains supported; no library constructor starts a background worker.
 
 The factory's outbound `RuntimeAuthority` port accepts the exact closed public SDK
-request and returns approved native evidence bytes. The supported bounded native
-issuer and service identity remain external qualification gates. This component
-contains no native issuing implementation, seed reader, key provisioner, trust
-installer or generic signing command. Only trusted startup code can inject that
-port; CLI flags cannot choose an arbitrary issuer. The runtime independently
-verifies and authorizes every query and handoff. An injected label is not proof.
+request and returns approved native evidence bytes. The concrete
+`CastaliaWalletRuntimeAuthority` selects only a digest-pinned
+`castalia-wallet-service` executable and owner-private `application=runtime`
+configuration. It contains no seed reader, key provisioner, trust installer or
+generic signing command. Runtime independently verifies and authorizes every
+query and handoff. Source composition and an injected label are not proof that an
+installed binary, identity, permission window or receiver policy is qualified.
 
 With no injected outbound port, production startup can serve liveness and
 fail-closed intake/readiness but does not start delivery or projection workers.
@@ -35,6 +36,26 @@ service-management --database /tmp/service-owned/service.db \
   --poll-runtime --poll-interval 1 --max-backoff 30 \
   --batch-size 100 --projection-pages 4 --runtime-timeout 5
 ```
+
+A production-shaped source composition adds all four Wallet pins:
+
+```sh
+service-management --database /private/provider/service.db \
+  --native-verifier /private/provider/bin/process-runtime-secs-check \
+  --native-verifier-sha256 "$SERVICE_VERIFIER_SHA256" \
+  --receiver-policy /private/provider/service-receiver.json \
+  --runtime-endpoint http://127.0.0.1:8092 \
+  --projection-database /private/provider/projection.db --poll-runtime \
+  --runtime-wallet-command /private/provider/bin/castalia-wallet-service \
+  --runtime-wallet-command-sha256 "$WALLET_COMMAND_SHA256" \
+  --runtime-wallet-configuration /private/provider/runtime-wallet-command.json \
+  --runtime-wallet-configuration-sha256 "$RUNTIME_WALLET_CONFIG_SHA256"
+```
+
+These options accept no raw key, arbitrary operation, policy, caller-selected
+mode or unpinned compatibility fallback. An uncertain retained Runtime command
+uses the adapter's explicit `resume` operation on the next reconciliation;
+queries always acquire fresh `query` evidence.
 
 `--poll-runtime` explicitly requests both workers and requires the runtime origin
 and separate projection file. Shared canonical/projection storage is rejected.
@@ -95,8 +116,8 @@ exception text appears in readiness or worker logs.
 
 Examples of recovery ownership:
 
-- Missing outgoing native issuer: `native-service-authority`; inject the
-  qualified bounded port through trusted startup.
+- Missing outgoing native issuer: `native-service-authority`; install and select
+  the qualified Wallet command/configuration tuple.
 - `not_ready` from closed admission: `process-runtime`; review and reopen
   receiver-owned new-run admission.
 - Uncertain/unavailable runtime: restore the runtime then reconcile exact intent.

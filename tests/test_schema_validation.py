@@ -13,11 +13,14 @@ from service_management.transport import transport_schema
 from service_management.contracts import command_schema, error_schema, result_schema
 from service_management.errors import ERRORS, ServiceError
 from service_management.integration_schema import handoff_schema, query_schema, query_result_schema, revision_schema
+from service_management.client_contract import client_schema, client_schema_v1, client_schema_v2, client_schema_v3
+from service_management.castalia_gateway import gateway_reference_schema, gateway_requester_schema
 import test_integration as fixtures
 
 ROOT = Path(__file__).resolve().parents[1]
 FACTORIES = {"transport": transport_schema, "command": command_schema, "error": error_schema, "result": result_schema, "query": query_schema,
-             "query-result": query_result_schema, "case-plan-revision": revision_schema, "runtime-handoff": handoff_schema}
+             "query-result": query_result_schema, "case-plan-revision": revision_schema, "runtime-handoff": handoff_schema,
+             "client": client_schema_v1}
 
 
 class ExportTests(unittest.TestCase):
@@ -34,6 +37,22 @@ class ExportTests(unittest.TestCase):
             modules += [alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names]
             self.assertFalse(any(name == "process_runtime" or name.startswith("process_runtime.") for name in modules), path.name)
 
+    def test_checked_in_client_v2_matches_current_definition(self):
+        self.assertEqual(json.loads((ROOT/"contracts/service.client.v2.schema.json").read_text()), client_schema_v2())
+
+    def test_checked_in_client_v3_matches_current_definition(self):
+        self.assertEqual(json.loads((ROOT/"contracts/service.client.v3.schema.json").read_text()), client_schema_v3())
+
+    def test_checked_in_client_v4_matches_current_definition(self):
+        self.assertEqual(json.loads((ROOT/"contracts/service.client.v4.schema.json").read_text()), client_schema())
+
+    def test_checked_in_gateway_requester_contract_matches_definition(self):
+        self.assertEqual(json.loads((ROOT/"contracts/gateway.requester.v1.schema.json").read_text()),
+                         gateway_requester_schema())
+
+    def test_checked_in_gateway_reference_contract_matches_definition(self):
+        self.assertEqual(json.loads((ROOT/"contracts/gateway.reference-object.v1.schema.json").read_text()),
+                         gateway_reference_schema())
 
 @unittest.skipIf(Draft202012Validator is None, "jsonschema is supplied with the optional runtime SDK test environment")
 class WireSchemaTests(unittest.TestCase):
@@ -62,3 +81,21 @@ class WireSchemaTests(unittest.TestCase):
         validators["case-plan-revision"].validate(result["plan_revision"])
         for code in ERRORS:
             validators["error"].validate(ServiceError(code).envelope())
+
+    def test_browser_contract_schema_accepts_published_client_fixtures(self):
+        schema = client_schema(); Draft202012Validator.check_schema(schema)
+        root = ROOT / "clients" / "typescript" / "fixtures"
+        fixtures = {
+            "provider_catalog": "provider-catalog.fixture.json",
+            "provider_catalog_v2": "provider-catalog-v2.fixture.json",
+            "provider_catalog_v3": "provider-catalog-v3.fixture.json",
+            "provider_catalog_v4": "provider-catalog-v4.fixture.json",
+            "intake": "intake-request.fixture.json",
+            "intake_result": "intake-pending.fixture.json",
+            "client_projection": "request-delivered.fixture.json",
+            "client_error": "forbidden.fixture.json",
+        }
+        for definition, filename in fixtures.items():
+            with self.subTest(definition=definition):
+                selected = {**schema, "$ref": f"#/$defs/{definition}"}
+                Draft202012Validator(selected).validate(json.loads((root / filename).read_text()))

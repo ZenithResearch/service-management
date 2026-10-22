@@ -11,6 +11,7 @@ from service_management import Service, ServiceError
 from service_management.authority import LocalDevUntrustedVerifier
 from service_management.contracts import canonical
 from service_management.delivery import OutboxDelivery
+from service_management.planning import expected_handoff_event_id
 from service_management.projection import RuntimeProjection
 from service_management.runtime_port import RuntimeCallError, content_digest, expected_run_id
 from service_management.sqlite_store import MIGRATION_1, SQLiteUnitOfWork
@@ -26,7 +27,7 @@ class FakeRuntime:
     """Contract-conforming fake provider; tests never import runtime core types."""
     def __init__(self):
         self.versions, self.runs, self.outputs, self.receipts, self.inbox = {}, {}, {}, {}, {}
-        self.events, self.sent = [], []
+        self.events, self.sent, self.resumed = [], [], []
         self.fail_once = None
         self.lost_response = False
         self.query_unavailable = False
@@ -57,6 +58,10 @@ class FakeRuntime:
             return {"schema": "runtime.result.v1", "request_id": envelope["request_id"], "operation": "handoff.consume", "duplicate": duplicate,
                     "resource": envelope["resource"], "version": 1,
                     "result": {"run_id": run_id, "pin": event["pin"], "state": "pending", "source_event_id": event_id}}
+
+    def resume_command(self, envelope):
+        self.resumed.append(copy.deepcopy(envelope))
+        return self.command(envelope)
 
     def new_command(self, operation, *, request_id, expected_version, payload):
         if operation != "handoff.consume": raise AssertionError(operation)
@@ -139,6 +144,8 @@ class ServiceIntegrationTests(unittest.TestCase):
         self.assertEqual(result["case"]["current_plan_revision_id"], "revision-1")
         self.assertEqual(result["plan_revision"]["author"], "local-dev-untrusted")
         self.assertEqual(result["handoff"]["state"], "pending")
+        self.assertEqual(result["handoff"]["event_id"],
+                         expected_handoff_event_id("case-1", "revision-1"))
         row = self.store.transact(lambda tx: tx.get_handoff(result["handoff"]["event_id"]))
         self.assertEqual(row["command"]["payload"]["pin"], self.pin)
         self.assertEqual(self.runtime.sent, [])
@@ -169,6 +176,7 @@ class ServiceIntegrationTests(unittest.TestCase):
         started = OutboxDelivery(SQLiteUnitOfWork(self.path), self.runtime).reconcile(event_id)
         self.assertEqual(started["state"], "started")
         self.assertEqual(self.runtime.sent[0], self.runtime.sent[1])
+        self.assertEqual(self.runtime.resumed, [self.runtime.sent[1]])
         self.assertEqual(len(self.runtime.runs), 1)
         self.assertEqual(self.service.query(query("request.execution", "request-1"))["data"]["execution_state"], "started")
 

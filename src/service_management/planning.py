@@ -3,7 +3,6 @@
 from dataclasses import replace
 import json
 import re
-import uuid
 
 from .contracts import canonical, identifier
 from .errors import ServiceError
@@ -12,6 +11,13 @@ from .runtime_port import (RuntimeClient, RuntimeCallError, content_digest, json
 
 PLAN_OPERATIONS = {"case.plan.approve", "case.plan.revise"}
 SELECTION_FIELDS = {"run_id", "step_id", "attempt_id", "output_name", "target_input", "expected_output_digest"}
+
+
+def expected_handoff_event_id(case_id: str, revision_id: str) -> str:
+    """Return the stable outbox identity for one immutable Case plan revision."""
+    if not identifier(case_id) or not identifier(revision_id):
+        raise ServiceError("invalid_command")
+    return "plan-" + content_digest({"case_id": case_id, "revision_id": revision_id})[:48]
 
 
 def validate_plan_payload(operation: str, payload: dict):
@@ -100,7 +106,7 @@ def prepare_plan(client: RuntimeClient, command, case, prior: dict | None, prior
     if set(inputs) != set(types) or any(not matches(types[key], value) for key, value in inputs.items()):
         raise ServiceError("invalid_plan_inputs")
     json_value(inputs)
-    event_id = str(uuid.uuid4())
+    event_id = expected_handoff_event_id(case.id, payload["revision_id"])
     event = {"schema": "service.runtime-handoff.v1", "event_id": event_id, "source": "service-management",
              "request_id": case.service_request_id, "case_id": case.id, "plan_revision_id": payload["revision_id"],
              "pin": payload["pin"], "inputs": inputs, "idempotency_key": event_id}

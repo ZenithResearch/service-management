@@ -10,6 +10,21 @@ This is reviewable implementation preparation for the foundation tasks:
 readiness or completion. Source-owned handoff, explicit plan revisions, and runtime
 summary projection preparation are also included; their exact task IDs and
 integration boundaries are in [ADR 0002](docs/adr/0002-runtime-handoff-and-plan-revisions.md).
+The separately encrypted reference-object route and immutable executor input path
+are specified in
+[ADR 0003](docs/adr/0003-encrypted-reference-delivery-and-execution-materialization.md).
+
+The [Zenith member ingress boundary](docs/zenith-member-ingress.md) describes how
+an Anima producer can submit an existing closed command after membership and
+ontology preflight without treating membership, Rolodex or transport identity as
+command authority. The [provider client intake boundary](docs/provider-client-intake.md)
+adds a durable pull worker in front of that canonical command boundary. It records
+an exact reviewed intake before acknowledging an external inbox, preserves one
+stable admission command across restart and unknown outcomes, and keeps dispatcher
+authentication, requester membership and Service Management command authority
+separate. Provider catalog v4 adds a separately authorized encrypted route for
+zero or one selected reference object up to 512 KiB; admission waits for the exact
+verified original and the lifecycle commits it into the Runtime input artifact.
 
 ## Run locally
 
@@ -22,6 +37,31 @@ PYTHONPATH=src python3.12 -m service_management \
   --database /tmp/service-management-dev/service.db \
   --environment development --local-dev-untrusted
 ```
+
+The optional Vercel Queues gateway publisher and poll adapter and Castalia
+requester verifier use pinned dependencies:
+
+```sh
+python3.12 -m pip install '.[vercel-queue,castalia-verifier]'
+```
+
+They are not enabled by the existing local CLI. The fail-closed Vercel entry point
+in `api/provider.py` exposes only receiver-credential issuance and ciphertext
+intake, with exact-origin CORS and no ambient browser credentials. It requires a
+qualified requester verifier and released secS envelope producer. The provider
+worker requires the matching opener, pinned membership/request issuers and Service
+Management command authority. Vercel OIDC, region/topic/group, retention and rate
+limits belong to the deployment composition. This source creates no Vercel project
+or paid resource.
+
+The first live release uses the [required Vercel Queue acceptance
+sequence](docs/vercel-queue-acceptance.md). It fixes the reviewed topic/group
+names, seven-day Queue retention, offline enqueue and local pre-ack commit proof, then
+continues through authoritative status, artifacts and receipts.
+
+The public credential endpoint verifies an active public Zenith membership
+credential and signs only the existing Wallet Auth v2 request-credential transcript
+over exact request and disclosure digests. It generates no signer key or membership.
 
 The CLI binds `127.0.0.1:8091`. `GET /live` reports process liveness; it does not
 certify authority or storage readiness. `GET /ready` checks bounded SQLite writer
@@ -77,8 +117,11 @@ domain or storage implementation is imported by service code. The CLI leaves thi
 port unavailable by default. Explicit endpoint/projection/polling options and the
 trusted startup factory now compose this port with bounded durable delivery and
 projection workers; see [runtime workers](docs/runtime-workers.md). Production
-outbound native authority remains unavailable unless a qualified port is injected
-by trusted startup code. Development CLI polling is visibly untrusted.
+outbound native authority can select the pinned `castalia-wallet-service`
+adapter with an owner-private `application=runtime` configuration and exact
+executable/config digests. Runtime independently verifies every returned
+envelope; source support does not qualify or activate installed artifacts.
+Development CLI polling remains visibly untrusted.
 
 The projection consumes the global runtime cursor stream into bounded, redacted
 progress summaries. It can be discarded and rebuilt without altering canonical
