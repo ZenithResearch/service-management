@@ -16,6 +16,7 @@ castalia-verifier = ["cryptography==50.0.1"]
 [project.scripts]
 service-management = "service_management.__main__:main"
 service-management-provider = "service_management.provider_worker:main"
+service-management-provider-projection = "service_management.provider_projection_server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

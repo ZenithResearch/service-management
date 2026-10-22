@@ -53,6 +53,7 @@ class ProviderHttpConfig:
     browser_origin: str
     credential_path: str = "/v1/request-credential"
     intake_path: str = "/v1/client/requests"
+    status_base_url: str | None = None
 
     def __post_init__(self):
         if (not isinstance(self.browser_origin, str) or not self.browser_origin.startswith("https://")
@@ -60,17 +61,27 @@ class ProviderHttpConfig:
                 or not self.credential_path.startswith("/") or not self.intake_path.startswith("/")
                 or self.credential_path == self.intake_path):
             raise ValueError("invalid provider HTTP configuration")
+        if self.status_base_url is not None:
+            from urllib.parse import urlsplit
+            parsed = urlsplit(self.status_base_url)
+            if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+                    or parsed.path not in {"", "/"} or parsed.query or parsed.fragment
+                    or self.status_base_url.endswith("/")):
+                raise ValueError("invalid public status origin")
 
 
 class ProviderHttpApplication:
     """Expose bounded browser commands and optional authoritative client reads."""
 
-    def __init__(self, config: ProviderHttpConfig, credential_issuer: ReceiverCredentialIssuer,
-                 intake_gateway: EncryptedIntakeGateway, *, client_reader=None,
-                 read_authorizer=None):
+    def __init__(self, config: ProviderHttpConfig, credential_issuer: ReceiverCredentialIssuer | None,
+                 intake_gateway: EncryptedIntakeGateway | None, *, client_reader=None,
+                 read_authorizer=None, read_only: bool = False):
         self.config, self.credential_issuer, self.intake_gateway = (
             config, credential_issuer, intake_gateway)
-        self.client_reader, self.read_authorizer = client_reader, read_authorizer
+        self.client_reader, self.read_authorizer, self.read_only = client_reader, read_authorizer, read_only
+        if read_only and (credential_issuer is not None or intake_gateway is not None
+                          or client_reader is None or read_authorizer is None):
+            raise ValueError("read-only provider HTTP requires only projection dependencies")
 
     async def handle(self, request: ProviderHttpRequest) -> ProviderHttpResponse:
         request_id = None
@@ -83,6 +94,8 @@ class ProviderHttpApplication:
                 return self._response(204, b"")
             if request.method == "GET":
                 return self._read(request.path, headers)
+            if self.read_only:
+                return self._error(405, "invalid_request", "The method is not supported.", False, None)
             if request.method != "POST":
                 return self._error(405, "invalid_request", "The method is not supported.", False, None)
             request_id = headers.get("x-zenith-request-id")
@@ -101,11 +114,15 @@ class ProviderHttpApplication:
             return self._error(400, "invalid_request", "The request is invalid.", False, request_id)
 
     def _credential(self, body: bytes, headers: dict[str, str]) -> ProviderHttpResponse:
+        if self.credential_issuer is None:
+            raise ServiceError("runtime_unavailable")
         self._body(headers, body, "application/json", 65_536)
         value = self.credential_issuer.issue(body)
         return self._json(200, value)
 
     async def _intake(self, body: bytes, headers: dict[str, str]) -> ProviderHttpResponse:
+        if self.intake_gateway is None:
+            raise ServiceError("runtime_unavailable")
         self._body(headers, body, "application/vnd.zenith.service-intake-envelope-v1",
                    MAX_ENCRYPTED_ENVELOPE)
         required = ("idempotency-key", "x-zenith-request-id", "x-zenith-provider-id",
@@ -126,6 +143,8 @@ class ProviderHttpApplication:
             headers["x-zenith-provider-id"], headers["x-zenith-intake-sha256"])
         result = await self.intake_gateway.submit(
             body, submission=submission, requester_presentation=presentation)
+        if self.config.status_base_url is not None:
+            result = {**result, "status_url": self.config.status_base_url + result["status_url"]}
         return self._json(202, result)
 
     def _read(self, path: str, headers: dict[str, str]) -> ProviderHttpResponse:

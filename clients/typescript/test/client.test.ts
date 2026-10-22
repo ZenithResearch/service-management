@@ -181,7 +181,29 @@ test("closed provider errors do not become uncertain after explicit denial", asy
 
 test("provider-returned links cannot move authority to another origin", async () => {
   const client = new ServiceClient({baseUrl: "https://provider.example", authorize: async () => ({Authorization: "test-only"})});
-  await assert.rejects(client.status("https://attacker.example/status", "anima-brand-request-01"), /configured provider origin/);
+  await assert.rejects(client.status("https://attacker.example/status", "anima-brand-request-01"), /not explicitly trusted/);
+});
+
+test("an explicitly trusted response origin receives only exact read authority", async () => {
+  let sent: {url: string; authorization?: string} | undefined;
+  const projection = await fixture("request-delivered.fixture.json");
+  const client = new ServiceClient({
+    baseUrl: "https://provider.example",
+    trustedReadOrigins: ["https://operator-response.example"],
+    authorize: async (request) => {
+      assert.equal(request.operation, "request.status");
+      assert.equal(request.resource, "requests/anima-brand-request-01");
+      assert.equal(request.method, "GET");
+      assert.equal(request.body_digest, null);
+      return {Authorization: "Castalia exact-read-presentation"};
+    },
+    fetch: async (input, init) => {
+      sent = {url: String(input), authorization: (init?.headers as Record<string, string>).Authorization};
+      return new Response(JSON.stringify(projection), {status: 200, headers: {"Content-Type": "application/json"}});
+    },
+  });
+  assert.equal((await client.status("https://operator-response.example/v1/client/requests/anima-brand-request-01", "anima-brand-request-01")).request_id, "anima-brand-request-01");
+  assert.deepEqual(sent, {url: "https://operator-response.example/v1/client/requests/anima-brand-request-01", authorization: "Castalia exact-read-presentation"});
 });
 
 test("client reads bind the exact operation and resource without URL or secrets", () => {

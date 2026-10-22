@@ -99,5 +99,16 @@ class ProviderProjectionTests(unittest.TestCase):
                                                "freshness": "unavailable", "observed_at": None})
         self.assertEqual(result["deliverables"], [])
 
+    def test_explicit_public_origin_is_applied_to_delivery_links(self):
+        projection = LocalProviderProjection(
+            Intakes(), Storage(), Runtime(), public_base_url="https://operator-response.example",
+            clock=lambda: datetime(2026, 10, 22, 12, tzinfo=UTC))
+        result = projection.status("request-1", "did.castalia.key.member-1")
+        self.assertTrue(all(item["href"].startswith("https://operator-response.example/")
+                            for item in result["deliverables"] + result["receipts"]))
+        with self.assertRaises(ValueError):
+            LocalProviderProjection(Intakes(), Storage(), Runtime(),
+                                    public_base_url="http://operator-response.example")
+
 
 if __name__ == "__main__": unittest.main()

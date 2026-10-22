@@ -1,4 +1,4 @@
-# Service Management TypeScript client 0.7.0
+# Service Management TypeScript client 0.8.0
 
 Status: **integration-ready contract package**. The fixtures are explicitly
 illustrative and do not claim that the Zenith brand-package provider is deployed.
@@ -46,8 +46,11 @@ which includes the v2 gateway endpoint, retention and bounded envelope key plus
 the accepted Zenith membership roots and receiver credential endpoint/pins.
 These are public trust configuration, not authority. Catalog v2 remains readable
 for earlier encrypted-intake integration. A client must obtain the catalog from
-its configured provider and explicitly trust any separate gateway or credential
-origin; catalog metadata cannot silently expand those origin sets.
+its configured provider and explicitly trust any separate gateway, credential or
+read origin; catalog metadata and returned links cannot silently expand those
+origin sets. `trustedReadOrigins` permits a provider to keep intake online while
+serving canonical status and delivery bytes from an operator-controlled HTTPS
+origin. The application, rather than the response payload, selects that trust.
 
 `prepareEncrypted()` canonicalizes and validates the reviewed request, gives an
 owned copy of those exact bytes to the requester-evidence adapter, obtains
@@ -116,13 +119,15 @@ it `verified` merely because it exists. secS and Service Management evidence rem
 separate canonical records.
 
 Provider-returned status, artifact and receipt links are restricted to the
-configured provider origin. Fetches omit ambient browser credentials and reject
-redirects; receiver-issued authorization is supplied only by the explicit
-`authorize` callback.
+configured provider origin plus any application-configured `trustedReadOrigins`.
+Fetches omit ambient browser credentials and reject redirects; receiver-issued
+authorization is supplied only by the explicit `authorize` callback. The current
+Zenith candidate uses this option for a GET-only Tailscale Funnel origin. Public
+Anima users access its ordinary HTTPS URL and do not join the provider tailnet.
 
 ## Compatibility
 
-Version 0.7.0 reads the exact closed `*.v1` envelopes in this package and closed
+Version 0.8.0 reads the exact closed `*.v1` envelopes in this package and closed
 provider-catalog v1, v2 and v3. It adds the v4 contract bundle for the read-
 authorization value while preserving the frozen v1-v3 bundles. Unknown fields
 or versions fail closed.

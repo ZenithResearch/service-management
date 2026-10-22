@@ -310,6 +310,23 @@ class IntakeStore:
             finally:
                 connection.close()
 
+    def health(self) -> bool:
+        """Check the existing bounded inbox schema without creating a database."""
+        connection = None
+        try:
+            connection = sqlite3.connect(self.database.as_uri() + "?mode=rw", uri=True,
+                                         timeout=min(self.timeout, 0.25), isolation_level=None)
+            if connection.execute("PRAGMA user_version").fetchone()[0] != self.SCHEMA_VERSION:
+                return False
+            tables = {row[0] for row in connection.execute(
+                "SELECT name FROM sqlite_schema WHERE type='table'")}
+            return {"client_intake", "provider_lifecycle"} <= tables
+        except (sqlite3.DatabaseError, OSError):
+            return False
+        finally:
+            if connection is not None:
+                connection.close()
+
     def ingest(self, opened: OpenedEnvelope, receipt: TransportReceipt) -> dict:
         if not isinstance(opened.requester_evidence, bytes) or not 0 < len(opened.requester_evidence) <= MAX_EVIDENCE_BODY:
             raise ServiceError("invalid_command")

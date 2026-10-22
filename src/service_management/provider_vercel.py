@@ -112,4 +112,6 @@ def provider_application_from_environment(
         CastaliaEncryptedGatewayVerifier(
             CastaliaGatewayPolicy((pin,), policy_digest, recipient_key_id, caller)),
         publisher)
-    return ProviderHttpApplication(ProviderHttpConfig(origin), credential_issuer, gateway)
+    status_base_url = environment.get("ZENITH_STATUS_BASE_URL") or None
+    return ProviderHttpApplication(
+        ProviderHttpConfig(origin, status_base_url=status_base_url), credential_issuer, gateway)

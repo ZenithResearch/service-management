@@ -29,9 +29,17 @@ class LocalProviderProjection:
     """Build one redacted browser view; underlying stores remain canonical."""
 
     def __init__(self, intakes, service_storage, runtime: RuntimeClient,
-                 *, clock=lambda: datetime.now(UTC)):
+                 *, public_base_url: str | None = None, clock=lambda: datetime.now(UTC)):
         self.intakes, self.service_storage, self.runtime, self.clock = (
             intakes, service_storage, runtime, clock)
+        if public_base_url is not None:
+            from urllib.parse import urlsplit
+            parsed = urlsplit(public_base_url)
+            if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+                    or parsed.path not in {"", "/"} or parsed.query or parsed.fragment
+                    or public_base_url.endswith("/")):
+                raise ValueError("invalid public projection origin")
+        self.public_base_url = public_base_url or ""
 
     def _source(self, request_id: str, subject: str) -> dict:
         if not identifier(request_id) or not identifier(subject):
@@ -131,7 +139,7 @@ class LocalProviderProjection:
             "recorded_at": _time(receipt["recorded_at_ms"]),
             "verification": {"state": "unverified", "verifier": None,
                              "detail": "Runtime receipt has no cryptographic author signature."},
-            "href": f"/v1/client/requests/{request_id}/receipts/process-runtime/{receipt['receipt_id']}",
+            "href": self.public_base_url + f"/v1/client/requests/{request_id}/receipts/process-runtime/{receipt['receipt_id']}",
         }
         deliverables = []
         for name, (identifier_value, label, filename) in DELIVERABLES.items():
@@ -148,7 +156,7 @@ class LocalProviderProjection:
                         "artifact_id": identifier_value, **artifact, "filename": filename}
             deliverables.append({"id": identifier_value, "version": 1, "label": label,
                 "artifact": manifest,
-                "href": f"/v1/client/requests/{request_id}/artifacts/{artifact['content_hash']}",
+                "href": self.public_base_url + f"/v1/client/requests/{request_id}/artifacts/{artifact['content_hash']}",
                 "receipt_ids": [receipt["receipt_id"]]})
         return deliverables, [receipt_reference]
 

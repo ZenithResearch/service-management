@@ -136,6 +136,35 @@ class ProviderHttpApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 204)
         self.assertEqual(response.body, b"")
 
+    async def test_intake_can_publish_an_explicit_https_status_origin(self):
+        app = ProviderHttpApplication(
+            ProviderHttpConfig("https://anima.example",
+                               status_base_url="https://operator-response.example"),
+            self.issuer, self.gateway)
+        body = envelope()
+        proof = base64.urlsafe_b64encode(b"proof").decode().rstrip("=")
+        result = await app.handle(ProviderHttpRequest(
+            "POST", "/v1/client/requests", headers(
+                ("Content-Type", "application/vnd.zenith.service-intake-envelope-v1"),
+                ("Content-Length", str(len(body))),
+                ("Authorization", "Castalia " + proof),
+                ("Idempotency-Key", "anima-brand-submit-01"),
+                ("X-Zenith-Request-Id", "anima-brand-request-01"),
+                ("X-Zenith-Provider-Id", "zenith"),
+                ("X-Zenith-Intake-SHA256", "11" * 32),
+                ("X-Zenith-Envelope-Key-Id", KEY_ID),
+                ("X-Zenith-Envelope-Expires-At", "1900000000000")), body))
+        self.assertEqual(json.loads(result.body)["status_url"],
+                         "https://operator-response.example/v1/client/requests/anima-brand-request-01")
+
+    async def test_read_only_composition_rejects_every_mutating_method(self):
+        app = ProviderHttpApplication(
+            ProviderHttpConfig("https://anima.example"), None, None,
+            client_reader=Reader(), read_authorizer=ReadAuthorizer(), read_only=True)
+        response = await app.handle(ProviderHttpRequest(
+            "POST", "/v1/client/requests", headers(), b""))
+        self.assertEqual(response.status, 405)
+
     async def test_authorized_status_artifact_and_receipt_reads_are_separate(self):
         authorizer, reader = ReadAuthorizer(), Reader()
         app = ProviderHttpApplication(

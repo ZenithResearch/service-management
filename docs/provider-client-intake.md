@@ -4,11 +4,12 @@ Status: **source candidate complete; installed native artifacts, real
 operator pins, deployed gateway and live Queue are not production-qualified**.
 
 The local authorized status/artifact/receipt projection is implemented in
-`provider_projection.py` and the framework-neutral HTTP routes are implemented
-in `provider_http.py`. No public synchronization or hosted projection store is
-selected by this source change. The Vercel gateway deployment still exposes
-credential issuance and intake only, so a remote browser cannot use the returned
-`status_url` until an operator-approved public projection transport is composed.
+`provider_projection.py`, its framework-neutral routes are in `provider_http.py`,
+and `provider_projection_server.py` composes a numeric-loopback GET/OPTIONS-only
+listener. The selected initial response transport is an operator-approved HTTPS
+Tailscale Funnel to that listener. This is a transport route, not a synchronized
+workspace or second canonical store. Public Anima users use normal HTTPS and do
+not join the provider tailnet. The source candidate does not alter Funnel state.
 
 This adapter connects a reachable provider inbox to the existing canonical
 Service Management command boundary. It does not make the queue, dispatcher or
@@ -192,11 +193,50 @@ closed unless all of these values are explicit:
 | `ZENITH_MEMBERSHIP_ROOTS_JSON` | Closed JSON array of accepted Zenith membership issuer roots |
 | `ZENITH_QUEUE_REGION`, `ZENITH_QUEUE_TOPIC` | One Vercel Queue route |
 | `VERCEL_OIDC_TOKEN` | Vercel-provided transport credential when required by the SDK |
+| `ZENITH_STATUS_BASE_URL` | Exact HTTPS origin of the separately deployed authorized projection listener |
 
 The composition creates no identity, key, membership, project, Queue or paid
 resource. Real values must match provider-catalog v3. Secret rotation, rate
 limits, live origin configuration and deployment qualification remain release
 operations, not browser behavior.
+
+## GET-only operator response listener
+
+`service-management-provider-projection` binds only to explicit numeric
+`127.0.0.1`. It accepts browser `GET` and `OPTIONS` for request status, committed
+artifact bytes and canonical receipt bytes. `POST`, `PUT` and `DELETE` are
+disabled in the read-only composition, so the Funnel does not create a second
+submission path. Every business read still needs a fresh exact Castalia Wallet
+presentation and must match the requester membership retained at admission.
+
+The operator pins the existing intake and Service databases, requester policy,
+Runtime endpoint and Runtime Wallet query authority. `--public-base-url` is the
+exact HTTPS Funnel origin placed on returned artifact and receipt links. The
+gateway uses the same origin as `ZENITH_STATUS_BASE_URL` when returning the
+initial `status_url`. Anima configures that origin in `trustedReadOrigins` before
+it will send authority there. Neither response data nor catalog metadata can add
+an origin to the client's trust set.
+
+```text
+service-management-provider-projection \
+  --intake-database /private/provider/intake.db \
+  --service-database /private/provider/service.db \
+  --requester-policy /private/provider/requester-policy.json \
+  --browser-origin https://anima.example \
+  --public-base-url https://matrix-home.example.ts.net \
+  --runtime-endpoint http://127.0.0.1:8292 \
+  --runtime-wallet-command /private/provider/bin/castalia-wallet-service \
+  --runtime-wallet-command-sha256 <released-sha256> \
+  --runtime-wallet-configuration /private/provider/runtime-wallet-command.json \
+  --runtime-wallet-configuration-sha256 <reviewed-sha256> \
+  --host 127.0.0.1 --port 8293
+```
+
+The local `/live` and `/ready` diagnostics report listener liveness and the
+independent intake-store, Service-store, requester-policy and Runtime-authority
+composition checks. A live listener does not imply a live Runtime, successful
+execution or available deliverables; canonical status reports unavailable
+Runtime state as `unknown`.
 
 ## Native secS composition
 
