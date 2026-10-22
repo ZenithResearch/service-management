@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Route the separately encrypted reference-object endpoint through the production Vercel handler and regression-test every public rewrite.
+
 ### Fixed
 - Correct provider-catalog v2-v4 fixture recipient key identifiers to the canonical secS X25519 public-key SHA-256 prefix and enforce that interop invariant in the TypeScript suite.
 

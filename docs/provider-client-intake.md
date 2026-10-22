@@ -189,8 +189,8 @@ failure is an unknown outcome, so the caller retries the exact envelope.
 
 ## Vercel source deployment configuration
 
-The checked-in `vercel.json` rewrites only `/v1/request-credential` and
-`/v1/client/requests` to the bounded Python handler. `requirements.txt` installs
+The checked-in `vercel.json` rewrites only `/v1/request-credential`,
+`/v1/client/requests` and `/v1/client/reference-objects` to the bounded Python handler. `requirements.txt` installs
 the package with its pinned Queue and Castalia verifier extras. Deployment fails
 closed unless all of these values are explicit:
 

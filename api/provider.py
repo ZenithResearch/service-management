@@ -12,6 +12,22 @@ from service_management.provider_http import ProviderHttpRequest
 from service_management.provider_vercel import provider_application_from_environment
 
 
+_ROUTES = {
+    "credential": "/v1/request-credential",
+    "intake": "/v1/client/requests",
+    "reference": "/v1/client/reference-objects",
+}
+
+
+def _route_path(raw_path: str) -> str:
+    parsed = urlsplit(raw_path)
+    route = parse_qs(parsed.query, strict_parsing=True).get("route", [])
+    path = _ROUTES.get(route[0] if len(route) == 1 else "")
+    if path is None:
+        raise ValueError("unsupported provider route")
+    return path
+
+
 @lru_cache(maxsize=1)
 def _application():
     return provider_application_from_environment()
@@ -36,12 +52,7 @@ class handler(BaseHTTPRequestHandler):
             if length < 0 or length > MAX_ENCRYPTED_ENVELOPE:
                 raise ValueError()
             body = self.rfile.read(length) if length else b""
-            parsed = urlsplit(self.path)
-            route = parse_qs(parsed.query, strict_parsing=True).get("route", [])
-            path = {"credential": "/v1/request-credential",
-                    "intake": "/v1/client/requests"}.get(route[0] if len(route) == 1 else "")
-            if path is None:
-                raise ValueError()
+            path = _route_path(self.path)
             response = asyncio.run(_application().handle(ProviderHttpRequest(
                 method, path, tuple(self.headers.raw_items()), body)))
         except Exception:
