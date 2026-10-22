@@ -27,7 +27,7 @@ NOW = datetime(2026, 10, 22, 8, 0, tzinfo=UTC)
 KEY_ID = "tunnel:x25519:fixture-key"
 
 
-def encrypted_envelope(*, key_id=KEY_ID, expires_at_ms=1793260800000,
+def encrypted_envelope(*, key_id=KEY_ID, expires_at_ms=1792742400000,
                        ciphertext=b"0" * 16):
     key = key_id.encode("ascii")
     return (INTAKE_ENVELOPE_MAGIC + expires_at_ms.to_bytes(8, "big") + bytes([len(key)])
@@ -35,7 +35,7 @@ def encrypted_envelope(*, key_id=KEY_ID, expires_at_ms=1793260800000,
             + ciphertext)
 
 
-def encrypted_reference_envelope(*, key_id=KEY_ID, expires_at_ms=1793260800000,
+def encrypted_reference_envelope(*, key_id=KEY_ID, expires_at_ms=1792742400000,
                                  ciphertext=b"0" * 16):
     key = key_id.encode("ascii")
     return (REFERENCE_OBJECT_ENVELOPE_MAGIC + expires_at_ms.to_bytes(8, "big")
@@ -110,10 +110,10 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
             requester_presentation=b"wallet-membership-presentation")
         self.assertEqual(result["state"], "pending")
         self.assertEqual(result["request_id"], submission.request_id)
-        self.assertEqual(result["transport_receipt"]["expires_at"], "2026-10-29T08:00:00.000Z")
+        self.assertEqual(result["transport_receipt"]["expires_at"], "2026-10-23T08:00:00.000Z")
         self.assertEqual(publisher.calls[0][0], envelope)
         self.assertRegex(publisher.calls[0][1], r"^seiv1\.[a-f0-9]{64}$")
-        self.assertEqual(publisher.calls[0][2], 604800)
+        self.assertEqual(publisher.calls[0][2], 86400)
         self.assertEqual(verifier.calls[0][1], hashlib.sha256(envelope).hexdigest())
 
     async def test_encrypted_gateway_rejects_wrong_key_expiry_frame_or_membership_before_publish(self):
@@ -161,7 +161,7 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
                                       requester_presentation=b"wallet-membership-presentation")
         self.assertEqual(result["state"], "pending")
         self.assertIsNone(result["service_request_id"])
-        self.assertEqual(result["transport_receipt"]["expires_at"], "2026-10-29T08:00:00.000Z")
+        self.assertEqual(result["transport_receipt"]["expires_at"], "2026-10-23T08:00:00.000Z")
         self.assertEqual(verifier.calls[0][1], hashlib.sha256(body).hexdigest())
         self.assertEqual(sealer.calls[0][:3], (body, b"durable-exact-request-proof", "zenith"))
         self.assertEqual(publisher.calls[0][0], b"secs-encrypted-envelope")
@@ -203,9 +203,14 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_official_publisher_passes_stable_idempotency_and_retention(self):
         queue = Queue(); publisher = VercelQueuePublisher(queue, "topic")
-        result = await publisher.send(b"ciphertext", idempotency_key="stable-key", retention_seconds=604800)
+        result = await publisher.send(b"ciphertext", idempotency_key="stable-key", retention_seconds=86400)
         self.assertEqual(result, "opaque-id")
-        self.assertEqual(queue.calls, [("topic", b"ciphertext", {"idempotency_key": "stable-key", "retention": 604800})])
+        self.assertEqual(queue.calls, [("topic", b"ciphertext", {"idempotency_key": "stable-key", "retention": 86400})])
+
+    async def test_official_publisher_rejects_retention_beyond_live_vercel_limit(self):
+        with self.assertRaises(ValueError):
+            await VercelQueuePublisher(Queue(), "topic").send(
+                b"ciphertext", idempotency_key="stable-key", retention_seconds=86401)
 
     def test_factory_rejects_static_token_shape_before_import(self):
         with self.assertRaises(ValueError):

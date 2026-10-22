@@ -32,6 +32,8 @@ test("closed readers reject unknown fields and versions", async () => {
 
 test("catalog v4 prepares and retries one exact encrypted original reference", async () => {
   const catalog = parseProviderCatalog(await fixture("provider-catalog-v4.fixture.json")) as ProviderCatalogV4;
+  assert.equal(catalog.intake.max_retention_seconds, 86400);
+  assert.equal(catalog.reference_objects.max_retention_seconds, 86400);
   const request = await fixture("intake-request.fixture.json") as IntakeRequest;
   const bytes = new TextEncoder().encode("reference");
   request.references = [{schema: "service.artifact-manifest.v1", artifact_id: "reference-1",
@@ -83,6 +85,7 @@ test("catalog v3 publishes closed Castalia requester policy without changing v2"
   assert.equal(catalog.requester.membership.roots[0].issuer_id, "zenith-research");
   assert.equal(catalog.requester.credential.endpoint, "https://credentials.zenith.invalid/v1/request-credential");
   assert.equal(catalog.requester.credential.callers[0].id, "https://anima.example");
+  assert.equal(catalog.intake.max_retention_seconds, 604800);
   const altered = await fixture("provider-catalog-v3.fixture.json");
   altered.requester.credential.callers[0].id = "https://anima.example/path";
   assert.throws(() => parseProviderCatalog(altered), /canonical secure browser origin/);

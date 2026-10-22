@@ -123,8 +123,8 @@ must be scoped to one provider installation; two machines sharing a group compet
 for work.
 
 Vercel documents at-least-once poll delivery, acknowledgement on successful
-handler completion and a per-message retention range of 60 seconds through seven
-days. The initial production profile should use seven days and expose that expiry
+handler completion and a per-message retention range of 60 seconds through 24
+hours. The initial production profile uses 24 hours and exposes that expiry
 in the `service.intake-result.v1` transport receipt. Expiry before local commit is
 terminal for that queued copy; the client reconciles status and may republish the
 same exact request identity.
@@ -180,7 +180,7 @@ those proofs and local current time cannot retroactively make a late proof valid
 
 The encrypted gateway requires stable public request and idempotency identities
 plus the canonical intake digest. It validates the closed public envelope frame,
-recipient key and a 60-second-to-seven-day expiry without opening ciphertext,
+recipient key and a 60-second-to-24-hour expiry without opening ciphertext,
 then hashes the stable logical identities into the Queue idempotency key. Its
 membership verifier must authorize that exact metadata. Requester evidence inside
 the envelope remains deterministic through Queue expiry; refreshing or replacing

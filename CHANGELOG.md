@@ -5,6 +5,9 @@
 - Route the separately encrypted reference-object endpoint through the production Vercel handler and regression-test every public rewrite.
 
 ### Fixed
+- Align the live Vercel Queue gateway and current provider-catalog v4 fixture
+  with Vercel's 24-hour maximum retention while keeping older catalog versions
+  readable for stored-client compatibility.
 - Permit an exact numeric-loopback HTTP browser origin for local candidate
   acceptance while preserving HTTPS-only production environment composition.
 - Correct provider-catalog v2-v4 fixture recipient key identifiers to the canonical secS X25519 public-key SHA-256 prefix and enforce that interop invariant in the TypeScript suite.
