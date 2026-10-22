@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
+from pathlib import Path
+import stat
 
 from .application import Service
 from .castalia_requester import CastaliaRequesterVerifier, load_requester_policy
@@ -19,6 +22,44 @@ from .sdk_adapter import SDKRuntimeAdapter
 from .sqlite_store import SQLiteUnitOfWork
 from .vercel_intake import VercelPollConfig, VercelPollIntake
 from .wallet_service_authority import CastaliaWalletRuntimeAuthority, CastaliaWalletServiceAuthority
+
+
+def _oidc_token(path: str) -> str:
+    """Read one owner-private OIDC token without putting it in argv or env."""
+    source = Path(path)
+    descriptor = None
+    try:
+        if not source.is_absolute() or source.is_symlink():
+            raise ValueError
+        descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        before = os.fstat(descriptor)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_uid != os.getuid() or before.st_mode & 0o077
+                or not 5 <= before.st_size <= 16_385):
+            raise ValueError
+        body = bytearray()
+        while block := os.read(descriptor, 16_386):
+            body.extend(block)
+            if len(body) > 16_385:
+                raise ValueError
+        after = os.fstat(descriptor)
+        identity = lambda value: (value.st_dev, value.st_ino, value.st_size,
+                                  value.st_mtime_ns, value.st_ctime_ns)
+        if identity(before) != identity(after) or len(body) != before.st_size:
+            raise ValueError
+        raw = bytes(body)
+        if raw.endswith(b"\n"):
+            raw = raw[:-1]
+        token = raw.decode("ascii")
+        if (not token or len(token) > 16_384 or token.count(".") != 2
+                or any(character.isspace() for character in token)):
+            raise ValueError
+        return token
+    except (OSError, UnicodeError, ValueError):
+        raise ValueError("invalid owner-private Vercel OIDC token file") from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
 
 
 def _admission(args) -> AdmissionWorker:
@@ -88,6 +129,7 @@ def _parser() -> argparse.ArgumentParser:
     pull.add_argument("--lease-seconds", type=int, default=300)
     pull.add_argument("--intake-opener", required=True)
     pull.add_argument("--intake-opener-sha256", required=True)
+    pull.add_argument("--oidc-token-file", required=True)
 
     for name, help_text in (
         ("admit-once", "verify and admit only fresh retained requests"),
@@ -142,7 +184,7 @@ def main(argv=None) -> int:
             opener = NativeSecSIntakeOpener(args.intake_opener, args.intake_opener_sha256)
             config = VercelPollConfig(args.topic, args.consumer_group, args.limit,
                                       args.lease_seconds)
-            worker = VercelPollIntake.from_sdk(region=args.region, token=None,
+            worker = VercelPollIntake.from_sdk(region=args.region, token=_oidc_token(args.oidc_token_file),
                                                config=config, opener=opener, store=store)
             results = asyncio.run(worker.ingest_once())
         elif args.command in {"admit-once", "resume-admission-once"}:

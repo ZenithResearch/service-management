@@ -1,11 +1,13 @@
 import contextlib
 import io
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from service_management.client_intake import UnknownAdmissionOutcome
-from service_management.provider_worker import main
+from service_management.provider_worker import _oidc_token, main
 
 
 def admission_args(command):
@@ -39,6 +41,14 @@ def lifecycle_args(command):
             "--process-id", "zenith.anima.brand-package",
             "--process-version", "zenith.anima.brand-package-v1",
             "--compilation-hash", "5" * 64]
+
+
+def pull_args(token_file):
+    return ["pull-once", "--intake-database", "/private/intake.db",
+            "--region", "sfo1", "--topic", "zenith-intake-v1",
+            "--consumer-group", "zenith-provider-mac", "--limit", "1",
+            "--lease-seconds", "300", "--intake-opener", "/private/secs-provider-intake-v1",
+            "--intake-opener-sha256", "4" * 64, "--oidc-token-file", str(token_file)]
 
 
 class ProviderWorkerTests(unittest.TestCase):
@@ -85,6 +95,38 @@ class ProviderWorkerTests(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(main(lifecycle_args("resume-brand-package-once")), 0)
         self.assertEqual(worker.calls, [("issue", 16), ("resume", 16)])
+
+    def test_pull_reads_owner_private_token_and_passes_it_only_to_sdk(self):
+        with tempfile.TemporaryDirectory() as directory:
+            token_file = Path(directory) / "oidc-token"
+            token_file.write_text("header.payload.signature\n")
+            token_file.chmod(0o600)
+            worker = type("Worker", (), {"ingest_once": staticmethod(lambda: _async([]))})()
+            output = io.StringIO()
+            with patch("service_management.provider_worker.IntakeStore"), \
+                    patch("service_management.provider_worker.NativeSecSIntakeOpener"), \
+                    patch("service_management.provider_worker.VercelPollIntake.from_sdk", return_value=worker) as factory, \
+                    contextlib.redirect_stdout(output):
+                self.assertEqual(main(pull_args(token_file)), 0)
+            self.assertEqual(factory.call_args.kwargs["token"], "header.payload.signature")
+            self.assertNotIn("header.payload.signature", output.getvalue())
+
+    def test_oidc_token_file_rejects_symlink_and_permissive_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            token_file = Path(directory) / "oidc-token"
+            token_file.write_text("header.payload.signature\n")
+            token_file.chmod(0o644)
+            with self.assertRaises(ValueError):
+                _oidc_token(str(token_file))
+            token_file.chmod(0o600)
+            link = Path(directory) / "token-link"
+            link.symlink_to(token_file)
+            with self.assertRaises(ValueError):
+                _oidc_token(str(link))
+
+
+async def _async(value):
+    return value
 
 
 if __name__ == "__main__":

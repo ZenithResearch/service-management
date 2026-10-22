@@ -250,7 +250,8 @@ service-management-provider pull-once \
   --region <released-region> --topic <released-topic> \
   --consumer-group <one-provider-installation> \
   --intake-opener /private/provider/bin/secs-provider-intake-v1 \
-  --intake-opener-sha256 <released-sha256>
+  --intake-opener-sha256 <released-sha256> \
+  --oidc-token-file /private/provider/vercel-oidc-token
 
 service-management-provider admit-once \
   --intake-database /private/provider/intake.db \
@@ -267,8 +268,10 @@ service-management-provider admit-once \
 
 Run `resume-admission-once` with the same admission arguments after an uncertain
 Wallet/output outcome. It selects only held rows and invokes only Wallet
-`resume`; `admit-once` selects only fresh rows. The worker receives Vercel OIDC
-through the official SDK environment resolution. It accepts no browser token,
+`resume`; `admit-once` selects only fresh rows. The worker reads Vercel OIDC
+from one absolute, owner-private regular file (mode `0600`) and passes it to the
+official SDK in memory. The credential is never placed in argv, inherited
+environment, worker output or browser state. It accepts no browser token,
 Wallet key, Service key, or arbitrary operation on its command line.
 
 After admission, `advance-brand-package-once` advances at most one command for
