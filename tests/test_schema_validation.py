@@ -14,7 +14,7 @@ from service_management.contracts import command_schema, error_schema, result_sc
 from service_management.errors import ERRORS, ServiceError
 from service_management.integration_schema import handoff_schema, query_schema, query_result_schema, revision_schema
 from service_management.client_contract import client_schema, client_schema_v1, client_schema_v2, client_schema_v3
-from service_management.castalia_gateway import gateway_requester_schema
+from service_management.castalia_gateway import gateway_reference_schema, gateway_requester_schema
 import test_integration as fixtures
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +49,10 @@ class ExportTests(unittest.TestCase):
     def test_checked_in_gateway_requester_contract_matches_definition(self):
         self.assertEqual(json.loads((ROOT/"contracts/gateway.requester.v1.schema.json").read_text()),
                          gateway_requester_schema())
+
+    def test_checked_in_gateway_reference_contract_matches_definition(self):
+        self.assertEqual(json.loads((ROOT/"contracts/gateway.reference-object.v1.schema.json").read_text()),
+                         gateway_reference_schema())
 
 @unittest.skipIf(Draft202012Validator is None, "jsonschema is supplied with the optional runtime SDK test environment")
 class WireSchemaTests(unittest.TestCase):
@@ -85,6 +89,7 @@ class WireSchemaTests(unittest.TestCase):
             "provider_catalog": "provider-catalog.fixture.json",
             "provider_catalog_v2": "provider-catalog-v2.fixture.json",
             "provider_catalog_v3": "provider-catalog-v3.fixture.json",
+            "provider_catalog_v4": "provider-catalog-v4.fixture.json",
             "intake": "intake-request.fixture.json",
             "intake_result": "intake-pending.fixture.json",
             "client_projection": "request-delivered.fixture.json",

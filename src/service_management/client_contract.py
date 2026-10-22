@@ -86,10 +86,29 @@ def client_schema(version: int = 4) -> dict:
                           "provider": provider,
                           "services": {"type": "array", "maxItems": 100, "items": service},
                           "authority": authority, "intake": intake_delivery, "requester": requester})
+    reference_envelope = _closed({"schema": {"const": "service.reference-object-envelope.v1"},
+                                  "algorithm": {"const": "x25519-hkdf-sha256-chacha20poly1305"},
+                                  "recipient_key_id": {"type": "string", "minLength": 1,
+                                                       "maxLength": 255, "pattern": "^[!-~]+$"},
+                                  "recipient_public_key_hex": HASH,
+                                  "not_before": TEXT, "not_after": TEXT})
+    reference_delivery = _closed({"endpoint": URI,
+                                  "max_retention_seconds": {"type": "integer", "minimum": 60,
+                                                            "maximum": 604800},
+                                  "max_object_bytes": {"const": 524288},
+                                  "max_objects_per_request": {"const": 1},
+                                  "envelope": reference_envelope})
+    catalog_v4 = _closed({"schema": {"const": "service.provider-catalog.v4"},
+                          "provider": provider,
+                          "services": {"type": "array", "maxItems": 100, "items": service},
+                          "authority": authority, "intake": intake_delivery,
+                          "requester": requester, "reference_objects": reference_delivery})
     catalog_versions = [{"$ref": "#/$defs/provider_catalog_v1"},
                         {"$ref": "#/$defs/provider_catalog_v2"}]
     if version >= 3:
         catalog_versions.append({"$ref": "#/$defs/provider_catalog_v3"})
+    if version >= 4:
+        catalog_versions.append({"$ref": "#/$defs/provider_catalog_v4"})
     catalog = {"oneOf": catalog_versions}
     brief = _closed({"schema": {"const": "service.reviewed-brief.v1"}, "revision": VERSION,
                      "content_hash": HASH, "values": {"type": "object", "maxProperties": 128}})
@@ -102,6 +121,10 @@ def client_schema(version: int = 4) -> dict:
                              "transport_receipt": {"anyOf": [_transport_receipt(), {"type": "null"}]},
                              "service_request_id": {"anyOf": [ID, {"type": "null"}]},
                              "service_request_version": {"anyOf": [VERSION, {"type": "null"}]}, "status_url": URI})
+    reference_result = _closed({"schema": {"const": "service.reference-object-result.v1"},
+                                "request_id": ID, "idempotency_key": ID, "artifact_id": ID,
+                                "content_hash": HASH, "state": {"const": "pending"},
+                                "transport_receipt": _transport_receipt()})
     receipt = _closed({"schema": {"const": "service.receipt-reference.v1"},
                        "owner": {"enum": ["service-management", "process-runtime", "secs"]},
                        "receipt_schema": TEXT, "receipt_id": ID, "content_hash": HASH, "recorded_at": TEXT,
@@ -143,7 +166,9 @@ def client_schema(version: int = 4) -> dict:
     if version >= 3:
         definitions = {**definitions, "provider_catalog_v3": catalog_v3}
     if version >= 4:
-        definitions = {**definitions, "client_read_authorization": _closed({
+        definitions = {**definitions, "provider_catalog_v4": catalog_v4,
+                       "reference_object_result": reference_result,
+                       "client_read_authorization": _closed({
             "schema": {"const": "service.client-read-authorization.v1"},
             "operation": {"enum": ["request.status", "artifact.get", "receipt.get"]},
             "resource": TEXT,

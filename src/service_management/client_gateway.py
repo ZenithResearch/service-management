@@ -22,10 +22,14 @@ from .errors import ServiceError
 # secS `service.intake-envelope.v1`: maximum public header plus bounded
 # ciphertext. Keep this synchronized with libsec-core and the interop contract.
 MAX_ENCRYPTED_ENVELOPE = 328_032
+MAX_REFERENCE_OBJECT_ENVELOPE = 787_203
+MAX_QUEUE_PAYLOAD = MAX_REFERENCE_OBJECT_ENVELOPE
 QUEUE_NAME = re.compile(r"^[A-Za-z0-9_-]+$", re.ASCII)
 SHA256 = re.compile(r"^[a-f0-9]{64}$", re.ASCII)
 INTAKE_ENVELOPE_MAGIC = b"SECSI01\0"
+REFERENCE_OBJECT_ENVELOPE_MAGIC = b"SECSR01\0"
 MAX_ENVELOPE_CIPHERTEXT = 327_712
+MAX_REFERENCE_OBJECT_CIPHERTEXT = 786_883
 
 
 def _time(value: datetime) -> str:
@@ -82,11 +86,36 @@ class EncryptedGatewaySubmission:
             raise ValueError("invalid encrypted intake metadata")
 
 
+@dataclass(frozen=True)
+class EncryptedReferenceSubmission:
+    """Safe public routing metadata for one encrypted original reference."""
+
+    request_id: str
+    idempotency_key: str
+    provider_id: str
+    artifact_id: str
+    content_hash: str
+
+    def __post_init__(self):
+        if (not identifier(self.request_id) or not identifier(self.idempotency_key)
+                or not identifier(self.provider_id) or not identifier(self.artifact_id)
+                or SHA256.fullmatch(self.content_hash) is None):
+            raise ValueError("invalid encrypted reference metadata")
+
+
 class EncryptedGatewayRequesterVerifier(Protocol):
     def verify(self, submission: EncryptedGatewaySubmission, envelope_digest: str,
                presentation: bytes, *, now: datetime, required_until: datetime
                ) -> VerifiedGatewayRequester:
         """Verify membership and exact public submission metadata before publish."""
+        ...
+
+
+class EncryptedReferenceRequesterVerifier(Protocol):
+    def verify(self, submission: EncryptedReferenceSubmission, envelope_digest: str,
+               presentation: bytes, *, now: datetime, required_until: datetime
+               ) -> VerifiedGatewayRequester:
+        """Verify membership and exact reference metadata before publish."""
         ...
 
 
@@ -114,11 +143,11 @@ class IntakeEnvelopeHeader:
     recipient_key_id: str
 
 
-def parse_intake_envelope_header(envelope: bytes) -> IntakeEnvelopeHeader:
-    """Validate the closed public frame without opening its ciphertext."""
-    if not isinstance(envelope, bytes) or not 0 < len(envelope) <= MAX_ENCRYPTED_ENVELOPE:
+def _parse_envelope_header(envelope: bytes, *, magic: bytes, maximum: int,
+                           max_ciphertext: int) -> IntakeEnvelopeHeader:
+    if not isinstance(envelope, bytes) or not 0 < len(envelope) <= maximum:
         raise ServiceError("invalid_command")
-    if len(envelope) < 17 + 32 + 12 + 4 + 16 or envelope[:8] != INTAKE_ENVELOPE_MAGIC:
+    if len(envelope) < 17 + 32 + 12 + 4 + 16 or envelope[:8] != magic:
         raise ServiceError("invalid_command")
     expires_at_ms = int.from_bytes(envelope[8:16], "big")
     key_length = envelope[16]
@@ -134,10 +163,25 @@ def parse_intake_envelope_header(envelope: bytes) -> IntakeEnvelopeHeader:
         raise ServiceError("invalid_command")
     ciphertext_length = int.from_bytes(
         envelope[ciphertext_length_offset:ciphertext_length_offset + 4], "big")
-    if (not 16 <= ciphertext_length <= MAX_ENVELOPE_CIPHERTEXT
+    if (not 16 <= ciphertext_length <= max_ciphertext
             or len(envelope) != ciphertext_length_offset + 4 + ciphertext_length):
         raise ServiceError("invalid_command")
     return IntakeEnvelopeHeader(expires_at_ms, key_id)
+
+
+def parse_intake_envelope_header(envelope: bytes) -> IntakeEnvelopeHeader:
+    """Validate the closed public intake frame without opening ciphertext."""
+    return _parse_envelope_header(
+        envelope, magic=INTAKE_ENVELOPE_MAGIC, maximum=MAX_ENCRYPTED_ENVELOPE,
+        max_ciphertext=MAX_ENVELOPE_CIPHERTEXT)
+
+
+def parse_reference_object_envelope_header(envelope: bytes) -> IntakeEnvelopeHeader:
+    """Validate the closed public reference frame without opening ciphertext."""
+    return _parse_envelope_header(
+        envelope, magic=REFERENCE_OBJECT_ENVELOPE_MAGIC,
+        maximum=MAX_REFERENCE_OBJECT_ENVELOPE,
+        max_ciphertext=MAX_REFERENCE_OBJECT_CIPHERTEXT)
 
 
 class EncryptedIntakeGateway:
@@ -190,6 +234,58 @@ class EncryptedIntakeGateway:
             "service_request_id": None,
             "service_request_version": None,
             "status_url": f"/v1/client/requests/{submission.request_id}",
+        }
+
+
+class EncryptedReferenceGateway:
+    """Publish one browser-sealed original reference without seeing plaintext."""
+
+    def __init__(self, config: EncryptedGatewayConfig,
+                 verifier: EncryptedReferenceRequesterVerifier, publisher: QueuePublisher,
+                 *, clock: Callable[[], datetime] = lambda: datetime.now(UTC)):
+        self.config, self.verifier, self.publisher, self.clock = config, verifier, publisher, clock
+
+    async def submit(self, envelope: bytes, *, submission: EncryptedReferenceSubmission,
+                     requester_presentation: bytes) -> dict:
+        if submission.provider_id != self.config.provider_id:
+            raise ServiceError("invalid_command")
+        header = parse_reference_object_envelope_header(envelope)
+        if header.recipient_key_id != self.config.recipient_key_id:
+            raise ServiceError("invalid_command")
+        now = self.clock()
+        if not isinstance(now, datetime) or now.tzinfo is None:
+            raise ServiceError("internal_error")
+        now_ms = math.floor(now.timestamp() * 1000)
+        remaining_ms = header.expires_at_ms - now_ms
+        if not 60_000 <= remaining_ms <= self.config.retention_seconds * 1000:
+            raise ServiceError("invalid_command")
+        expires = datetime.fromtimestamp(header.expires_at_ms / 1000, tz=UTC)
+        envelope_digest = hashlib.sha256(envelope).hexdigest()
+        self.verifier.verify(submission, envelope_digest, requester_presentation,
+                             now=now, required_until=expires)
+        dedup = "serv1." + hashlib.sha256(
+            f"{submission.provider_id}\0{submission.request_id}\0{submission.idempotency_key}\0"
+            f"{submission.artifact_id}\0{submission.content_hash}".encode("utf-8")).hexdigest()
+        retention_seconds = math.ceil(remaining_ms / 1000)
+        try:
+            message_id = await self.publisher.send(
+                envelope, idempotency_key=dedup, retention_seconds=retention_seconds)
+        except Exception as error:
+            raise UnknownGatewayOutcome() from error
+        receipt_source = message_id if isinstance(message_id, str) and message_id else dedup
+        return {
+            "schema": "service.reference-object-result.v1",
+            "request_id": submission.request_id,
+            "idempotency_key": submission.idempotency_key,
+            "artifact_id": submission.artifact_id,
+            "content_hash": submission.content_hash,
+            "state": "pending",
+            "transport_receipt": {
+                "transport": "vercel-queue",
+                "receipt_id": "vqs." + hashlib.sha256(receipt_source.encode("utf-8")).hexdigest(),
+                "recorded_at": _time(now),
+                "expires_at": _time(expires),
+            },
         }
 
 
@@ -264,7 +360,7 @@ class VercelQueuePublisher:
         self.queue, self.topic = queue, topic
 
     async def send(self, payload: bytes, *, idempotency_key: str, retention_seconds: int) -> str | None:
-        if (not isinstance(payload, bytes) or not 0 < len(payload) <= MAX_ENCRYPTED_ENVELOPE
+        if (not isinstance(payload, bytes) or not 0 < len(payload) <= MAX_QUEUE_PAYLOAD
                 or not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 256
                 or type(retention_seconds) is not int or not 60 <= retention_seconds <= 604_800):
             raise ValueError("invalid queue publish")

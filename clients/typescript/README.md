@@ -1,4 +1,4 @@
-# Service Management TypeScript client 0.8.1
+# Service Management TypeScript client 0.9.0
 
 Status: **integration-ready contract package**. The fixtures are explicitly
 illustrative and do not claim that the Zenith brand-package provider is deployed.
@@ -17,6 +17,8 @@ transport acknowledgement as service admission.
 | `submit()` | `POST /v1/client/requests` | Intake transport accepts pending work; Service Management owns admitted ServiceRequests |
 | `prepareEncrypted()` + `sendPreparedEncrypted()` | Provider-catalog v2/v3 `intake.endpoint` | Browser seals once, persists resumable ciphertext, then sends or retries those exact bytes |
 | `submitEncrypted()` | Provider-catalog v2/v3 `intake.endpoint` | Convenience prepare-and-send wrapper for callers that do not need resumable recovery |
+| `prepareEncryptedBundle()` | Provider-catalog v4 intake and reference endpoints | Obtains requester evidence once and seals the reviewed request plus its zero-or-one selected original with those exact evidence bytes |
+| `prepareEncryptedReference()` + `sendPreparedEncryptedReference()` | Provider-catalog v4 `reference_objects.endpoint` | Browser seals one selected original, persists its exact ciphertext, then sends or retries those same bytes |
 | `requestCredential()` | Catalog v3 credential endpoint on an explicitly trusted origin | Requests the existing short-lived Wallet Auth v2 credential after presenting an active public Zenith membership credential |
 | `encryptedIntakeAuthorizationBytes()` | Local helper | Produces the exact canonical public gateway request for the outer Wallet credential and presentation |
 | `clientReadAuthorizationBytes()` | Local helper | Produces the exact canonical request bound by status, artifact and receipt Wallet presentations |
@@ -67,6 +69,18 @@ object after an exception, so durable clients use the split API. Only the sealed
 envelope and bounded public routing headers reach the intake endpoint. The
 legacy `submit()` plaintext method remains available for v1/local integration;
 it is not the production public-gateway path.
+
+Provider catalog v4 adds a distinct encrypted reference-object route. The first
+profile accepts at most one selected original up to 524,288 bytes. Its manifest
+must already be part of the exact reviewed request, and its bytes must match that
+manifest before the sealer is called. Use `prepareEncryptedBundle()` so the
+request and reference envelope contain one exact requester proof; two separate
+Wallet calls may produce different valid bytes and will fail the provider's
+cross-envelope check. Persist both returned prepared values before either send.
+An uncertain outcome retries only the affected exact envelope; do not reseal,
+refresh evidence, or change bytes under the stable request identity. A file above
+the published limit remains local and blocks submission for this profile. There
+is no implicit CDN, chunking, Matrix attachment, or shared-workspace fallback.
 
 The production adapter uses two independently verified Wallet presentations. The
 first is inside the secS envelope and binds the active membership to the exact
@@ -131,10 +145,10 @@ discover or redirect the response route.
 
 ## Compatibility
 
-Version 0.8.1 reads the exact closed `*.v1` envelopes in this package and closed
-provider-catalog v1, v2 and v3. It adds the v4 contract bundle for the read-
-authorization value while preserving the frozen v1-v3 bundles. Unknown fields
-or versions fail closed.
+Version 0.9.0 reads the exact closed `*.v1` envelopes in this package and closed
+provider-catalog v1 through v4. Catalog v4 publishes both the existing read-
+authorization value and the separate reference-object delivery profile while
+preserving the frozen v1-v3 bundles. Unknown fields or versions fail closed.
 Its evidence callback receives the exact canonical intake bytes needed to build
 `service.castalia-requester-evidence.v1`; the view is an owned copy and cannot
 mutate the request passed to the envelope sealer.

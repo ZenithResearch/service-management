@@ -15,6 +15,7 @@ from .castalia_credential import (
 )
 from .castalia_gateway import (
     CastaliaEncryptedGatewayVerifier,
+    CastaliaEncryptedReferenceVerifier,
     CastaliaGatewayPolicy,
 )
 from .castalia_requester import (
@@ -22,7 +23,12 @@ from .castalia_requester import (
     WalletPresentationPin,
     ZenithMembershipRoot,
 )
-from .client_gateway import EncryptedGatewayConfig, EncryptedIntakeGateway, VercelQueuePublisher
+from .client_gateway import (
+    EncryptedGatewayConfig,
+    EncryptedIntakeGateway,
+    EncryptedReferenceGateway,
+    VercelQueuePublisher,
+)
 from .contracts import identifier
 from .provider_http import ProviderHttpApplication, ProviderHttpConfig
 
@@ -107,11 +113,19 @@ def provider_application_from_environment(
         region=_required(environment, "ZENITH_QUEUE_REGION", 32),
         token=environment.get("VERCEL_OIDC_TOKEN"),
         topic=_required(environment, "ZENITH_QUEUE_TOPIC", 128))
+    reference_publisher = VercelQueuePublisher.from_sdk(
+        region=_required(environment, "ZENITH_QUEUE_REGION", 32),
+        token=environment.get("VERCEL_OIDC_TOKEN"),
+        topic=_required(environment, "ZENITH_REFERENCE_QUEUE_TOPIC", 128))
+    gateway_policy = CastaliaGatewayPolicy((pin,), policy_digest, recipient_key_id, caller)
     gateway = EncryptedIntakeGateway(
         EncryptedGatewayConfig(provider_id, recipient_key_id),
-        CastaliaEncryptedGatewayVerifier(
-            CastaliaGatewayPolicy((pin,), policy_digest, recipient_key_id, caller)),
+        CastaliaEncryptedGatewayVerifier(gateway_policy),
         publisher)
+    reference_gateway = EncryptedReferenceGateway(
+        EncryptedGatewayConfig(provider_id, recipient_key_id),
+        CastaliaEncryptedReferenceVerifier(gateway_policy), reference_publisher)
     status_base_url = environment.get("ZENITH_STATUS_BASE_URL") or None
     return ProviderHttpApplication(
-        ProviderHttpConfig(origin, status_base_url=status_base_url), credential_issuer, gateway)
+        ProviderHttpConfig(origin, status_base_url=status_base_url), credential_issuer, gateway,
+        reference_gateway=reference_gateway)

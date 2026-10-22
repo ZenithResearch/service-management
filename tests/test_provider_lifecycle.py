@@ -176,6 +176,24 @@ class ProviderLifecycleTests(unittest.TestCase):
             self.worker._command("request_admitted", parsed)
         self.assertEqual(raised.exception.code, "invalid_command")
 
+    def test_reference_manifest_v2_carries_the_verified_original_bytes(self):
+        content = b"original-visual-reference"
+        value = json.loads(intake())
+        manifest = {"schema": "service.artifact-manifest.v1", "artifact_id": "reference-1",
+                    "content_hash": hashlib.sha256(content).hexdigest(),
+                    "byte_length": len(content), "media_type": "image/png",
+                    "filename": "reference.png"}
+        value["references"] = [manifest]
+        parsed = Intake.parse(canonical(value).encode())
+        target, command, stage = self.worker._command(
+            "brief_stored", parsed, [{"manifest": manifest, "content": content}])
+        self.assertEqual((target, stage), ("runtime", "references_stored"))
+        retained = json.loads(base64.b64decode(command["payload"]["content_base64"]))
+        self.assertEqual(retained["schema"], "service.reference-manifest.v2")
+        self.assertEqual(retained["references"][0]["content_hash"], manifest["content_hash"])
+        self.assertEqual(base64.b64decode(retained["references"][0]["content_base64"]),
+                         content)
+
 
 if __name__ == "__main__":
     unittest.main()

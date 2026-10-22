@@ -67,7 +67,8 @@ class BrandPackageLifecycleWorker:
                 "request_id": command_id, "resource": {"kind": kind, "id": resource_id},
                 "expected_version": expected_version, "payload": payload}
 
-    def _command(self, stage: str, intake: Intake) -> tuple[str, dict, str]:
+    def _command(self, stage: str, intake: Intake,
+                 reference_objects: list[dict] | None = None) -> tuple[str, dict, str]:
         if (intake.provider_id != "zenith" or intake.service_id != "zenith.anima.brand-package"
                 or intake.service_version != "1.0.0"):
             raise ServiceError("invalid_command")
@@ -94,8 +95,17 @@ class BrandPackageLifecycleWorker:
                                    "revision": intake.brief_revision,
                                    "content_hash": intake.brief_hash,
                                    "values": intake.values}).encode("utf-8")
-        reference_content = canonical({"schema": "service.reference-manifest.v1",
-                                       "references": json.loads(intake.references_json)}).encode("utf-8")
+        if reference_objects is None:
+            reference_objects = []
+        if len(reference_objects) != len(json.loads(intake.references_json)):
+            raise ServiceError("invalid_command")
+        reference_content = canonical({
+            "schema": "service.reference-manifest.v2",
+            "references": [{**item["manifest"],
+                            "content_base64": base64.b64encode(
+                                item["content"]).decode("ascii")}
+                           for item in reference_objects],
+        }).encode("utf-8")
         brief_ref, reference_ref = _artifact(brief_content), _artifact(reference_content)
         if stage in {"planned", "brief_stored"}:
             content = brief_content if stage == "planned" else reference_content
@@ -170,7 +180,12 @@ class BrandPackageLifecycleWorker:
         results = []
         for row in self.store.lifecycle_pending(limit=limit, recovery=recovery):
             intake = Intake.parse(row["intake_json"].encode("utf-8"))
-            target, command, next_stage = self._command(row["stage"], intake)
+            references = self.store.reference_objects_for_intake(
+                intake, bytes(row["requester_evidence"]))
+            if references is None:
+                continue
+            target, command, next_stage = self._command(
+                row["stage"], intake, references)
             digest = self.store.retain_lifecycle_command(
                 intake.request_id, row["stage"], target, command)
             retained = canonical(command)

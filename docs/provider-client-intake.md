@@ -22,8 +22,9 @@ browser authoritative over a `ServiceRequest`.
 | Reviewed brief and selected manifests | Client | User-reviewed intent bound by `brief.content_hash` |
 | HTTPS authentication and publish | Public provider gateway | Requester proof verified for the exact submission; no ServiceRequest yet |
 | Bounded encrypted queue payload | Vercel Queues | `pending`; retained for at most its configured TTL |
+| Separately encrypted reference object | Browser / reference Queue | Exact selected original is sealed and retried independently; no ServiceRequest yet |
 | Decrypt/authenticate transport envelope | Provider worker | Dispatcher identity and ciphertext integrity only |
-| `client_intake` SQLite commit | Provider worker | Exact intake and requester evidence are now durable on the operator machine |
+| `client_intake` SQLite commit | Provider worker | Exact intake, reference original and requester evidence are durable before each Queue acknowledgement |
 | Requester verification | Provider policy adapter | Existing membership and exact-request authority are valid under receiver policy |
 | `service.command.v1/request.create` | Service Management | Canonical ServiceRequest admission under separately configured Service authority |
 | Qualification, acceptance and conversion | Service Management | Explicit lifecycle decisions; Case creation is never implied by queue delivery |
@@ -47,6 +48,16 @@ presentation over exact ciphertext routing metadata. `provider_http.py` exposes
 the two public commands through a framework-neutral, exact-origin HTTP adapter;
 `provider_vercel.py` and `api/provider.py` provide the fail-closed Vercel
 composition and Python entry point.
+
+Provider catalog v4 publishes `/v1/client/reference-objects` as a separate
+encrypted route. The initial profile accepts zero or one original up to 524,288
+bytes. The browser must retain and retry the exact prepared ciphertext. The
+reference and request may arrive in either order, but canonical admission waits
+until every declared reference matches its stable identities, manifest digest,
+byte length, original bytes, and the request envelope's exact requester evidence.
+Files above the limit and requests with more than one reference fail closed; this
+version defines no chunking, CDN, Matrix-attachment or shared-workspace fallback.
+See [ADR 0003](adr/0003-encrypted-reference-delivery-and-execution-materialization.md).
 
 ## Receiver credential issuance
 
@@ -92,6 +103,8 @@ request. Neither proof is Service Management command authority.
 3. The pull worker commits the exact intake, public requester evidence and
    transport receipt before queue acknowledgement. A lost acknowledgement causes
    an exact local deduplication retry.
+   The independent reference worker applies the same invariant to each selected
+   original and its separate transport receipt.
 4. The admission worker durably retains the generated command and changes its
    local authority state to `resume_required` before starting Wallet issuance.
    Fresh polling never calls `issue` again for that row. An uncertain or lost
@@ -191,12 +204,13 @@ closed unless all of these values are explicit:
 | `ZENITH_RECEIVER_AUDIENCE` | Wallet Auth audience |
 | `ZENITH_REQUESTER_POLICY_DIGEST_SHA256` | Exact receiver policy digest |
 | `ZENITH_MEMBERSHIP_ROOTS_JSON` | Closed JSON array of accepted Zenith membership issuer roots |
-| `ZENITH_QUEUE_REGION`, `ZENITH_QUEUE_TOPIC` | One Vercel Queue route |
+| `ZENITH_QUEUE_REGION`, `ZENITH_QUEUE_TOPIC` | Vercel region and reviewed-intake Queue route |
+| `ZENITH_REFERENCE_QUEUE_TOPIC` | Separate encrypted reference-object Queue route |
 | `VERCEL_OIDC_TOKEN` | Vercel-provided transport credential when required by the SDK |
 | `ZENITH_STATUS_BASE_URL` | Exact HTTPS base, with optional normalized mount path, of the separately deployed authorized projection listener |
 
 The composition creates no identity, key, membership, project, Queue or paid
-resource. Real values must match provider-catalog v3. Secret rotation, rate
+resource. Real values must match provider-catalog v4. Secret rotation, rate
 limits, live origin configuration and deployment qualification remain release
 operations, not browser behavior.
 
@@ -302,6 +316,14 @@ service-management-provider pull-once \
   --intake-opener-sha256 <released-sha256> \
   --oidc-token-file /private/provider/vercel-oidc-token
 
+service-management-provider pull-references-once \
+  --intake-database /private/provider/intake.db \
+  --region <released-region> --topic <released-reference-topic> \
+  --consumer-group <one-provider-installation-reference-group> \
+  --intake-opener /private/provider/bin/secs-provider-intake-v1 \
+  --intake-opener-sha256 <released-sha256> \
+  --oidc-token-file /private/provider/vercel-oidc-token
+
 service-management-provider admit-once \
   --intake-database /private/provider/intake.db \
   --service-database /private/provider/service.db \
@@ -331,8 +353,9 @@ Runtime Wallet command/configuration pins, and the reviewed
 
 1. qualify and accept the canonical ServiceRequest;
 2. convert it to a deterministic Case and record its plan scope;
-3. commit the exact reviewed brief and reference manifest JSON as two
-   content-addressed Runtime artifacts;
+3. commit the exact reviewed brief and `service.reference-manifest.v2` as two
+   content-addressed Runtime artifacts; the latter embeds the verified original
+   bytes for the initial zero-or-one-reference profile;
 4. approve the Case plan with those artifact references, the organization name,
    and the exact immutable `zenith.anima.brand-package` process pin.
 

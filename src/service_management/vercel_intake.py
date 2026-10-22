@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from .client_intake import EnvelopeOpener, IntakeStore, TransportReceipt
+from .client_intake import EnvelopeOpener, IntakeStore, ReferenceObjectOpener, TransportReceipt
 
 
 QUEUE_NAME = re.compile(r"^[A-Za-z0-9_-]+$", re.ASCII)
@@ -83,6 +83,51 @@ class VercelPollIntake:
         if not isinstance(region, str) or re.fullmatch(r"^[a-z0-9]+$", region, re.ASCII) is None:
             raise ValueError("invalid Vercel queue region")
         if token is not None and (not isinstance(token, str) or token.count(".") != 2 or len(token) > 16_384):
+            raise ValueError("invalid Vercel OIDC token")
+        try:
+            from vercel.queue import ALL_DEPLOYMENTS, ByteBufferTransport, QueueClient, Topic
+        except ImportError as error:
+            raise RuntimeError("install the optional vercel-queue dependency") from error
+        queue = QueueClient(region=region, token=token, deployment=ALL_DEPLOYMENTS)
+        topic = Topic[bytes](config.topic, transport=ByteBufferTransport())
+        return cls(queue, topic, config, opener, store)
+
+
+class VercelPollReferenceObjects:
+    """Poll the distinct encrypted-reference topic into the same durable inbox."""
+
+    def __init__(self, queue: Any, topic: Any, config: VercelPollConfig,
+                 opener: ReferenceObjectOpener, store: IntakeStore):
+        self.queue, self.topic, self.config = queue, topic, config
+        self.opener, self.store = opener, store
+
+    async def ingest_once(self) -> list[dict]:
+        results = []
+        deliveries = self.queue.poll(self.topic, self.config.consumer_group,
+                                     limit=self.config.limit,
+                                     lease_duration=self.config.lease_seconds)
+        async for delivery in deliveries:
+            async with delivery as message:
+                if not isinstance(message.payload, bytes):
+                    raise ValueError("reference queue topic must use the bytes transport")
+                opened = self.opener.open_reference(message.payload)
+                metadata = message.metadata
+                receipt = TransportReceipt(
+                    "vercel-queue",
+                    "vqs." + hashlib.sha256(
+                        str(metadata.message_id).encode("utf-8")).hexdigest(),
+                    _time(metadata.created_at) or "", _time(metadata.expires_at))
+                results.append(self.store.ingest_reference(opened, receipt))
+        return results
+
+    @classmethod
+    def from_sdk(cls, *, region: str, token: str | None, config: VercelPollConfig,
+                 opener: ReferenceObjectOpener,
+                 store: IntakeStore) -> "VercelPollReferenceObjects":
+        if not isinstance(region, str) or re.fullmatch(r"^[a-z0-9]+$", region, re.ASCII) is None:
+            raise ValueError("invalid Vercel queue region")
+        if token is not None and (not isinstance(token, str) or token.count(".") != 2
+                                  or len(token) > 16_384):
             raise ValueError("invalid Vercel OIDC token")
         try:
             from vercel.queue import ALL_DEPLOYMENTS, ByteBufferTransport, QueueClient, Topic

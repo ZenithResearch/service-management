@@ -17,6 +17,7 @@ from .castalia_requester import (
 )
 from .client_gateway import (
     EncryptedGatewaySubmission,
+    EncryptedReferenceSubmission,
     VerifiedGatewayRequester,
 )
 from .client_intake import MAX_EVIDENCE_BODY
@@ -27,6 +28,7 @@ AUTHORIZATION_SCHEMA = "service.encrypted-intake-authorization.v1"
 PRESENTATION_SCHEMA = "service.castalia-gateway-presentation.v1"
 CLIENT_READ_SCHEMA = "service.client-read-authorization.v1"
 CLIENT_READ_OPERATIONS = {"request.status", "artifact.get", "receipt.get"}
+REFERENCE_AUTHORIZATION_SCHEMA = "service.encrypted-reference-authorization.v1"
 
 
 def gateway_requester_schema() -> dict:
@@ -65,6 +67,29 @@ def gateway_requester_schema() -> dict:
     }
 
 
+def gateway_reference_schema() -> dict:
+    """Published exact authorization for one encrypted original reference."""
+    hex32 = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+    identifier = {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"}
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:service-management:gateway-reference-object:v1",
+        "title": "Encrypted reference-object gateway requester contract v1",
+        "type": "object", "additionalProperties": False,
+        "required": ["schema", "provider_id", "request_id", "idempotency_key",
+                     "artifact_id", "content_sha256", "envelope_digest_sha256",
+                     "recipient_key_id", "envelope_expires_at_ms"],
+        "properties": {
+            "schema": {"const": REFERENCE_AUTHORIZATION_SCHEMA},
+            "provider_id": identifier, "request_id": identifier,
+            "idempotency_key": identifier, "artifact_id": identifier,
+            "content_sha256": hex32, "envelope_digest_sha256": hex32,
+            "recipient_key_id": {"type": "string", "minLength": 1, "maxLength": 255,
+                                 "pattern": "^[!-~]+$"},
+            "envelope_expires_at_ms": {"type": "integer", "minimum": 0,
+                                       "maximum": 9_007_199_254_740_991},
+        },
+    }
 def _pairs(pairs):
     result = {}
     for key, value in pairs:
@@ -98,6 +123,31 @@ def encrypted_intake_authorization(submission: EncryptedGatewaySubmission,
         "request_id": submission.request_id,
         "idempotency_key": submission.idempotency_key,
         "intake_digest_sha256": submission.intake_digest,
+        "envelope_digest_sha256": envelope_digest,
+        "recipient_key_id": recipient_key_id,
+        "envelope_expires_at_ms": expires_at_ms,
+    }
+
+
+def encrypted_reference_authorization(submission: EncryptedReferenceSubmission,
+                                      envelope_digest: str, *, recipient_key_id: str,
+                                      expires_at_ms: int) -> dict:
+    """Build the exact Wallet-authorized public reference submission."""
+    if (not isinstance(envelope_digest, str) or len(envelope_digest) != 64
+            or any(c not in "0123456789abcdef" for c in envelope_digest)
+            or not isinstance(recipient_key_id, str)
+            or not 1 <= len(recipient_key_id.encode("ascii", errors="ignore")) <= 255
+            or recipient_key_id.encode("ascii", errors="ignore").decode("ascii") != recipient_key_id
+            or any(ord(c) < 0x21 or ord(c) > 0x7e for c in recipient_key_id)
+            or type(expires_at_ms) is not int or not 0 <= expires_at_ms <= 2**53 - 1):
+        raise ValueError("invalid encrypted reference authorization")
+    return {
+        "schema": REFERENCE_AUTHORIZATION_SCHEMA,
+        "provider_id": submission.provider_id,
+        "request_id": submission.request_id,
+        "idempotency_key": submission.idempotency_key,
+        "artifact_id": submission.artifact_id,
+        "content_sha256": submission.content_hash,
         "envelope_digest_sha256": envelope_digest,
         "recipient_key_id": recipient_key_id,
         "envelope_expires_at_ms": expires_at_ms,
@@ -162,6 +212,46 @@ class CastaliaEncryptedGatewayVerifier:
                 accepted_at=math.floor(now.timestamp()), expected_caller=self.policy.caller)
             subject = "did.castalia.key." + holder
             return VerifiedGatewayRequester(subject, canonical(value).encode("utf-8"))
+        except (KeyError, TypeError, ValueError, UnicodeError, OverflowError, json.JSONDecodeError):
+            raise ServiceError("forbidden") from None
+
+
+class CastaliaEncryptedReferenceVerifier:
+    """Verify a Wallet presentation over one immutable reference submission."""
+
+    def __init__(self, policy: CastaliaGatewayPolicy):
+        if Ed25519PublicKey is None:
+            raise RuntimeError("install service-management[castalia-verifier]")
+        self.policy = policy
+
+    def verify(self, submission: EncryptedReferenceSubmission, envelope_digest: str,
+               presentation: bytes, *, now: datetime, required_until: datetime
+               ) -> VerifiedGatewayRequester:
+        try:
+            if (not isinstance(now, datetime) or now.tzinfo is None
+                    or not isinstance(required_until, datetime) or required_until.tzinfo is None):
+                raise ValueError("gateway times must be timezone-aware")
+            request_bytes = canonical(encrypted_reference_authorization(
+                submission, envelope_digest, recipient_key_id=self.policy.recipient_key_id,
+                expires_at_ms=math.floor(required_until.timestamp() * 1000))).encode("utf-8")
+            if not isinstance(presentation, bytes) or not 0 < len(presentation) <= MAX_EVIDENCE_BODY:
+                raise ValueError("invalid presentation size")
+            value = json.loads(
+                presentation.decode("utf-8"), object_pairs_hook=_pairs,
+                parse_float=lambda _: (_ for _ in ()).throw(ValueError()),
+                parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
+            if canonical(value).encode("utf-8") != presentation:
+                raise ValueError("gateway presentation is not canonical")
+            value = _exact(value, {"schema", "presentation_request", "presentation"})
+            if value["schema"] != PRESENTATION_SCHEMA:
+                raise ValueError("unsupported gateway presentation")
+            holder = verify_wallet_presentation(
+                request_bytes, value["presentation_request"], value["presentation"],
+                presentation_pins=self.policy.presentation_pins,
+                policy_digest_sha256=self.policy.policy_digest_sha256,
+                accepted_at=math.floor(now.timestamp()), expected_caller=self.policy.caller)
+            return VerifiedGatewayRequester(
+                "did.castalia.key." + holder, canonical(value).encode("utf-8"))
         except (KeyError, TypeError, ValueError, UnicodeError, OverflowError, json.JSONDecodeError):
             raise ServiceError("forbidden") from None
 

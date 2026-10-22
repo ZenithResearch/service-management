@@ -8,8 +8,11 @@ from service_management.client_gateway import (
     EncryptedGatewayConfig,
     EncryptedGatewaySubmission,
     EncryptedIntakeGateway,
+    EncryptedReferenceGateway,
+    EncryptedReferenceSubmission,
     GatewayConfig,
     INTAKE_ENVELOPE_MAGIC,
+    REFERENCE_OBJECT_ENVELOPE_MAGIC,
     PublicIntakeGateway,
     UnknownGatewayOutcome,
     VercelQueuePublisher,
@@ -30,6 +33,14 @@ def encrypted_envelope(*, key_id=KEY_ID, expires_at_ms=1793260800000,
     return (INTAKE_ENVELOPE_MAGIC + expires_at_ms.to_bytes(8, "big") + bytes([len(key)])
             + key + b"e" * 32 + b"n" * 12 + len(ciphertext).to_bytes(4, "big")
             + ciphertext)
+
+
+def encrypted_reference_envelope(*, key_id=KEY_ID, expires_at_ms=1793260800000,
+                                 ciphertext=b"0" * 16):
+    key = key_id.encode("ascii")
+    return (REFERENCE_OBJECT_ENVELOPE_MAGIC + expires_at_ms.to_bytes(8, "big")
+            + bytes([len(key)]) + key + b"e" * 32 + b"n" * 12
+            + len(ciphertext).to_bytes(4, "big") + ciphertext)
 
 
 class Verifier:
@@ -69,6 +80,24 @@ class EncryptedVerifier:
 
 
 class GatewayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_encrypted_reference_uses_distinct_frame_topic_key_and_result(self):
+        verifier, publisher = EncryptedVerifier(), Publisher()
+        submission = EncryptedReferenceSubmission(
+            "anima-brand-request-01", "anima-brand-submit-01", "zenith",
+            "reference-1", "a" * 64)
+        gateway = EncryptedReferenceGateway(
+            EncryptedGatewayConfig("zenith", KEY_ID), verifier, publisher,
+            clock=lambda: NOW)
+        result = await gateway.submit(
+            encrypted_reference_envelope(), submission=submission,
+            requester_presentation=b"wallet-membership-presentation")
+        self.assertEqual(result["schema"], "service.reference-object-result.v1")
+        self.assertEqual(result["artifact_id"], "reference-1")
+        self.assertRegex(publisher.calls[0][1], r"^serv1\.[a-f0-9]{64}$")
+        with self.assertRaises(ServiceError):
+            await gateway.submit(encrypted_envelope(), submission=submission,
+                                 requester_presentation=b"wallet-membership-presentation")
+
     async def test_already_encrypted_gateway_publishes_ciphertext_without_plaintext(self):
         verifier, publisher = EncryptedVerifier(), Publisher()
         envelope = encrypted_envelope()

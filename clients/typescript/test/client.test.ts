@@ -3,7 +3,7 @@ import {readFile} from "node:fs/promises";
 import test from "node:test";
 import {fileURLToPath} from "node:url";
 import {dirname, resolve} from "node:path";
-import {clientReadAuthorizationBytes, deriveDisplayState, encryptedIntakeAuthorizationBytes, parseClientProjection, parseIntakeResult, parseProviderCatalog, ServiceClient, ServiceClientError, validateIntake, type IntakeRequest, type ProviderCatalogV2, type ProviderCatalogV3} from "../src/index.ts";
+import {clientReadAuthorizationBytes, deriveDisplayState, encryptedIntakeAuthorizationBytes, encryptedReferenceAuthorizationBytes, parseClientProjection, parseIntakeResult, parseProviderCatalog, ServiceClient, ServiceClientError, validateIntake, type IntakeRequest, type ProviderCatalogV2, type ProviderCatalogV3, type ProviderCatalogV4} from "../src/index.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 async function fixture(name: string): Promise<any> { return JSON.parse(await readFile(resolve(here, "../fixtures", name), "utf8")); }
@@ -25,8 +25,54 @@ test("closed readers reject unknown fields and versions", async () => {
   catalog.unreviewed = true;
   assert.throws(() => parseProviderCatalog(catalog), ServiceClientError);
   delete catalog.unreviewed;
-  catalog.schema = "service.provider-catalog.v4";
+  catalog.schema = "service.provider-catalog.v5";
   assert.throws(() => parseProviderCatalog(catalog), /Unsupported provider catalog/);
+});
+
+test("catalog v4 prepares and retries one exact encrypted original reference", async () => {
+  const catalog = parseProviderCatalog(await fixture("provider-catalog-v4.fixture.json")) as ProviderCatalogV4;
+  const request = await fixture("intake-request.fixture.json") as IntakeRequest;
+  const bytes = new TextEncoder().encode("reference");
+  request.references = [{schema: "service.artifact-manifest.v1", artifact_id: "reference-1",
+    content_hash: "52367a6622b19f08825e915fad80c542ad4f4c34dbcebad9f5007994b3e39208",
+    byte_length: bytes.byteLength, media_type: "image/png", filename: "reference.png"}];
+  const evidence = new TextEncoder().encode("same-intake-requester-evidence");
+  let sent: RequestInit | undefined;
+  const client = new ServiceClient({baseUrl: "https://provider.invalid",
+    trustedIntakeOrigins: ["https://intake.zenith.invalid"], authorize: async () => ({}),
+    fetch: async (_input, init) => { sent = init; return new Response(JSON.stringify({schema: "service.reference-object-result.v1", request_id: request.request_id, idempotency_key: request.idempotency_key, artifact_id: "reference-1", content_hash: request.references[0].content_hash, state: "pending", transport_receipt: {transport: "vercel-queue", receipt_id: "receipt-1", recorded_at: "2026-10-22T08:00:00.000Z", expires_at: "2026-10-23T08:00:00.000Z"}}), {status: 202}); }});
+  const prepared = await client.prepareEncryptedReference(request, catalog, request.references[0], bytes, evidence, {sealReferenceObject: async (input) => { assert.deepEqual(input.object, bytes); assert.deepEqual(input.requester_evidence, evidence); return new Uint8Array([5, 4, 3, 2, 1]); }}, Date.parse("2026-10-22T08:00:00.000Z"));
+  const authorization = JSON.parse(new TextDecoder().decode(encryptedReferenceAuthorizationBytes(prepared)));
+  assert.equal(authorization.schema, "service.encrypted-reference-authorization.v1");
+  assert.equal(authorization.artifact_id, "reference-1");
+  const result = await client.sendPreparedEncryptedReference(prepared, {authorize: async () => ({Authorization: "fixture-reference-presentation"})}, Date.parse("2026-10-22T08:00:00.001Z"));
+  assert.equal(result.state, "pending");
+  assert.equal((sent?.headers as Record<string, string>)["Content-Type"], "application/vnd.zenith.service-reference-object-envelope-v1");
+  assert.deepEqual(new Uint8Array(sent?.body as ArrayBuffer), new Uint8Array([5, 4, 3, 2, 1]));
+});
+
+test("catalog v4 bundle seals request and reference with one exact requester proof", async () => {
+  const catalog = parseProviderCatalog(await fixture("provider-catalog-v4.fixture.json")) as ProviderCatalogV4;
+  const request = await fixture("intake-request.fixture.json") as IntakeRequest;
+  const bytes = new TextEncoder().encode("reference");
+  const manifest = {schema: "service.artifact-manifest.v1", artifact_id: "reference-1",
+    content_hash: "52367a6622b19f08825e915fad80c542ad4f4c34dbcebad9f5007994b3e39208",
+    byte_length: bytes.byteLength, media_type: "image/png", filename: "reference.png"} as const;
+  request.references = [manifest];
+  const evidence = new TextEncoder().encode("one-exact-requester-proof");
+  let evidenceCalls = 0, requestProof: Uint8Array | undefined, referenceProof: Uint8Array | undefined;
+  const client = new ServiceClient({baseUrl: "https://provider.invalid",
+    trustedIntakeOrigins: ["https://intake.zenith.invalid"], authorize: async () => ({})});
+  const prepared = await client.prepareEncryptedBundle(request, catalog,
+    {manifest, bytes}, {now: Date.parse("2026-10-22T08:00:00.000Z"),
+      authority: {evidence: async () => { evidenceCalls += 1; return evidence; }},
+      sealer: {seal: async (input) => { requestProof = new Uint8Array(input.requester_evidence); return new Uint8Array([1]); }},
+      referenceSealer: {sealReferenceObject: async (input) => { referenceProof = new Uint8Array(input.requester_evidence); return new Uint8Array([2]); }}});
+  assert.equal(evidenceCalls, 1);
+  assert.deepEqual(requestProof, referenceProof);
+  assert.notEqual(requestProof, evidence);
+  assert.deepEqual(prepared.request.envelope, new Uint8Array([1]));
+  assert.deepEqual(prepared.reference?.envelope, new Uint8Array([2]));
 });
 
 test("catalog v3 publishes closed Castalia requester policy without changing v2", async () => {

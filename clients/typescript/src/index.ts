@@ -24,6 +24,12 @@ export interface IntakeEnvelopeProfile {
   recipient_key_id: string; recipient_public_key_hex: string;
   not_before: string; not_after: string;
 }
+export interface ReferenceObjectEnvelopeProfile {
+  schema: "service.reference-object-envelope.v1";
+  algorithm: "x25519-hkdf-sha256-chacha20poly1305";
+  recipient_key_id: string; recipient_public_key_hex: string;
+  not_before: string; not_after: string;
+}
 export interface ProviderCatalogV1 {
   schema: "service.provider-catalog.v1"; provider: ProviderIdentity; services: ProviderService[];
   authority: { submission: "receiver-issued"; status: "receiver-issued"; artifacts: "receiver-issued"; };
@@ -57,8 +63,16 @@ export interface ProviderCatalogV3 {
   intake: { endpoint: string; max_retention_seconds: number; envelope: IntakeEnvelopeProfile; };
   requester: PublishedRequesterProfile;
 }
-export type ProviderCatalog = ProviderCatalogV1 | ProviderCatalogV2 | ProviderCatalogV3;
-export type EncryptedProviderCatalog = ProviderCatalogV2 | ProviderCatalogV3;
+export interface ProviderCatalogV4 {
+  schema: "service.provider-catalog.v4"; provider: ProviderIdentity; services: ProviderService[];
+  authority: ProviderAuthority;
+  intake: { endpoint: string; max_retention_seconds: number; envelope: IntakeEnvelopeProfile; };
+  requester: PublishedRequesterProfile;
+  reference_objects: { endpoint: string; max_retention_seconds: number; max_object_bytes: 524288;
+    max_objects_per_request: 1; envelope: ReferenceObjectEnvelopeProfile; };
+}
+export type ProviderCatalog = ProviderCatalogV1 | ProviderCatalogV2 | ProviderCatalogV3 | ProviderCatalogV4;
+export type EncryptedProviderCatalog = ProviderCatalogV2 | ProviderCatalogV3 | ProviderCatalogV4;
 export interface ArtifactManifest {
   schema: "service.artifact-manifest.v1"; artifact_id: Identifier; content_hash: Sha256;
   byte_length: number; media_type: string; filename: string;
@@ -119,7 +133,7 @@ export interface ClientErrorBody {
 }
 export type DisplayState = "submitting" | "pending-provider" | "accepted" | "qualification-needed" | "planned" | "running" | "review-needed" | "delivered" | "rejected" | "failed" | "unknown";
 export interface AuthorizationRequest {
-  operation: "artifact.put" | "request.submit" | "request.status" | "artifact.get" | "receipt.get";
+  operation: "artifact.put" | "request.submit" | "reference.submit" | "request.status" | "artifact.get" | "receipt.get";
   resource: string; method: "GET" | "PUT" | "POST"; url: string; body_digest: Sha256 | null;
 }
 export interface ClientReadAuthorizationV1 {
@@ -143,9 +157,30 @@ export interface EncryptedSubmissionAuthority {
   evidence(request: RequesterEvidenceRequest): Promise<Uint8Array>;
   authorize(request: EncryptedGatewayAuthorizationRequest): Promise<Record<string, string>>;
 }
+export interface EncryptedReferenceSubmissionAuthority {
+  authorize(request: EncryptedAuthorizationRequest & { operation: "reference.submit";
+    artifact_id: Identifier; content_hash: Sha256; envelope_digest: Sha256;
+  }): Promise<Record<string, string>>;
+}
 export interface IntakeEnvelopeSealer {
   seal(input: { intake: Uint8Array; requester_evidence: Uint8Array;
     profile: IntakeEnvelopeProfile; expires_at_ms: number; }): Promise<Uint8Array>;
+}
+export interface ReferenceObjectEnvelopeSealer {
+  sealReferenceObject(input: { request_id: Identifier; idempotency_key: Identifier;
+    artifact_id: Identifier; content_hash: Sha256; object: Uint8Array;
+    requester_evidence: Uint8Array; profile: ReferenceObjectEnvelopeProfile;
+    expires_at_ms: number; }): Promise<Uint8Array>;
+}
+export interface PreparedEncryptedReference {
+  endpoint: string; envelope: Uint8Array; envelope_digest: Sha256; content_hash: Sha256;
+  provider_id: Identifier; request_id: Identifier; idempotency_key: Identifier;
+  artifact_id: Identifier; recipient_key_id: string; expires_at_ms: number;
+}
+export interface ReferenceObjectResult {
+  schema: "service.reference-object-result.v1"; request_id: Identifier;
+  idempotency_key: Identifier; artifact_id: Identifier; content_hash: Sha256;
+  state: "pending"; transport_receipt: TransportReceipt;
 }
 export interface PreparedEncryptedSubmission {
   /** SDK-local resumable state. Persist this exact object before the first send. */
@@ -153,10 +188,20 @@ export interface PreparedEncryptedSubmission {
   provider_id: Identifier; request_id: Identifier; idempotency_key: Identifier;
   recipient_key_id: string; expires_at_ms: number;
 }
+export interface PreparedEncryptedBundle {
+  request: PreparedEncryptedSubmission;
+  reference: PreparedEncryptedReference | null;
+}
 export interface EncryptedIntakeAuthorizationV1 {
   schema: "service.encrypted-intake-authorization.v1";
   provider_id: Identifier; request_id: Identifier; idempotency_key: Identifier;
   intake_digest_sha256: Sha256; envelope_digest_sha256: Sha256;
+  recipient_key_id: string; envelope_expires_at_ms: number;
+}
+export interface EncryptedReferenceAuthorizationV1 {
+  schema: "service.encrypted-reference-authorization.v1";
+  provider_id: Identifier; request_id: Identifier; idempotency_key: Identifier;
+  artifact_id: Identifier; content_sha256: Sha256; envelope_digest_sha256: Sha256;
   recipient_key_id: string; envelope_expires_at_ms: number;
 }
 
@@ -166,6 +211,7 @@ const noncePattern = /^[a-f0-9]{32}$/;
 const signatureHexPattern = /^[a-f0-9]{128}$/;
 const visibleAsciiPattern = /^[!-~]{1,255}$/;
 const maxEncryptedEnvelope = 328032;
+const maxReferenceObjectEnvelope = 787203;
 const maxRequesterEvidence = 262144;
 
 export class ServiceClientError extends Error {
@@ -232,8 +278,8 @@ export function parseRequestCredential(value: unknown): RequestCredentialV1 {
 
 export function parseProviderCatalog(value: unknown): ProviderCatalog {
   const root = record(value, "provider catalog");
-  if (root.schema !== "service.provider-catalog.v1" && root.schema !== "service.provider-catalog.v2" && root.schema !== "service.provider-catalog.v3") throw new ServiceClientError("incompatible_version", "Unsupported provider catalog");
-  exact(root, root.schema === "service.provider-catalog.v3" ? ["schema", "provider", "services", "authority", "intake", "requester"] : root.schema === "service.provider-catalog.v2" ? ["schema", "provider", "services", "authority", "intake"] : ["schema", "provider", "services", "authority"], "provider catalog");
+  if (root.schema !== "service.provider-catalog.v1" && root.schema !== "service.provider-catalog.v2" && root.schema !== "service.provider-catalog.v3" && root.schema !== "service.provider-catalog.v4") throw new ServiceClientError("incompatible_version", "Unsupported provider catalog");
+  exact(root, root.schema === "service.provider-catalog.v4" ? ["schema", "provider", "services", "authority", "intake", "requester", "reference_objects"] : root.schema === "service.provider-catalog.v3" ? ["schema", "provider", "services", "authority", "intake", "requester"] : root.schema === "service.provider-catalog.v2" ? ["schema", "provider", "services", "authority", "intake"] : ["schema", "provider", "services", "authority"], "provider catalog");
   const provider = record(root.provider, "provider"); exact(provider, ["id", "name", "version"], "provider");
   const authority = record(root.authority, "authority"); exact(authority, ["submission", "status", "artifacts"], "authority");
   for (const key of ["submission", "status", "artifacts"]) if (authority[key] !== "receiver-issued") throw new ServiceClientError("incompatible_response", `Unsupported ${key} authority`);
@@ -267,11 +313,22 @@ export function parseProviderCatalog(value: unknown): ProviderCatalog {
   if (credential.issuance_schema !== "service.castalia-credential-issuance.v1" || credential.credential_schema !== "castalia.request-credential.v1" || credential.presentation_protocol !== "castalia.wallet-auth.v2") throw new ServiceClientError("incompatible_response", "Unsupported requester credential protocol");
   const callers = array(credential.callers, "requester.credential.callers").map((value, index) => parsePublishedCaller(value, `requester.credential.callers[${index}]`));
   if (callers.length < 1 || callers.length > 16) throw new ServiceClientError("incompatible_response", "Credential callers are empty or too large");
-  return {schema: root.schema, ...common, intake: parsedIntake, requester: {
+  const parsedRequester: PublishedRequesterProfile = {
     evidence_schema: requester.evidence_schema,
     membership: {credential_schema: membership.credential_schema, issuer_origin: absoluteHttpUrl(membership.issuer_origin, "membership.issuer_origin"), roots},
     credential: {endpoint: absoluteHttpUrl(credential.endpoint, "credential.endpoint"), issuance_schema: credential.issuance_schema, credential_schema: credential.credential_schema, presentation_protocol: credential.presentation_protocol, issuer: string(credential.issuer, "credential.issuer"), key_id: identifier(credential.key_id, "credential.key_id"), public_key_hex: hash(credential.public_key_hex, "credential.public_key_hex"), audience: string(credential.audience, "credential.audience"), policy_digest_sha256: hash(credential.policy_digest_sha256, "credential.policy_digest_sha256"), callers},
-  }};
+  };
+  if (root.schema === "service.provider-catalog.v3") return {schema: root.schema, ...common, intake: parsedIntake, requester: parsedRequester};
+  const references = record(root.reference_objects, "reference object delivery"); exact(references, ["endpoint", "max_retention_seconds", "max_object_bytes", "max_objects_per_request", "envelope"], "reference object delivery");
+  if (references.max_object_bytes !== 524288 || references.max_objects_per_request !== 1) throw new ServiceClientError("incompatible_response", "Unsupported reference-object bounds");
+  const referenceRetention = natural(references.max_retention_seconds, "reference max_retention_seconds", true);
+  if (referenceRetention < 60 || referenceRetention > 604800) throw new ServiceClientError("incompatible_response", "Unsupported reference retention");
+  const referenceEnvelope = record(references.envelope, "reference envelope"); exact(referenceEnvelope, ["schema", "algorithm", "recipient_key_id", "recipient_public_key_hex", "not_before", "not_after"], "reference envelope");
+  if (referenceEnvelope.schema !== "service.reference-object-envelope.v1" || referenceEnvelope.algorithm !== "x25519-hkdf-sha256-chacha20poly1305" || typeof referenceEnvelope.recipient_key_id !== "string" || !visibleAsciiPattern.test(referenceEnvelope.recipient_key_id)) throw new ServiceClientError("incompatible_response", "Unsupported reference-object envelope profile");
+  const referenceNotBefore = timestamp(referenceEnvelope.not_before, "reference envelope.not_before"), referenceNotAfter = timestamp(referenceEnvelope.not_after, "reference envelope.not_after");
+  if (Date.parse(referenceNotAfter) <= Date.parse(referenceNotBefore) || referenceEnvelope.recipient_key_id !== parsedIntake.envelope.recipient_key_id || referenceEnvelope.recipient_public_key_hex !== parsedIntake.envelope.recipient_public_key_hex) throw new ServiceClientError("incompatible_response", "Reference-object key profile does not match intake custody");
+  return {schema: root.schema, ...common, intake: parsedIntake, requester: parsedRequester,
+    reference_objects: {endpoint: absoluteHttpUrl(references.endpoint, "reference_objects.endpoint"), max_retention_seconds: referenceRetention, max_object_bytes: 524288, max_objects_per_request: 1, envelope: {schema: referenceEnvelope.schema, algorithm: referenceEnvelope.algorithm, recipient_key_id: referenceEnvelope.recipient_key_id, recipient_public_key_hex: hash(referenceEnvelope.recipient_public_key_hex, "reference recipient_public_key_hex"), not_before: referenceNotBefore, not_after: referenceNotAfter}}};
 }
 
 export function parseIntakeResult(value: unknown): IntakeResult {
@@ -318,6 +375,7 @@ export function validateIntake(request: IntakeRequest, catalog: ProviderCatalog)
   for (const input of service.inputs) { const value = request.brief.values[input.id]; if (input.required && value === undefined) throw new ServiceClientError("invalid_request", `Missing required input: ${input.id}`); if (value !== undefined && input.type === "integer" && !Number.isSafeInteger(value)) throw new ServiceClientError("invalid_request", `Invalid input: ${input.id}`); if (value !== undefined && input.type !== "integer" && typeof value !== input.type) throw new ServiceClientError("invalid_request", `Invalid input: ${input.id}`); if (typeof value === "string" && input.max_length !== null && value.length > input.max_length) throw new ServiceClientError("invalid_request", `Input too long: ${input.id}`); }
   for (const reference of request.references) { const requirement = service.accepted_references.find((item) => item.media_types.includes(reference.media_type)); if (!requirement || reference.byte_length > requirement.max_bytes || !hashPattern.test(reference.content_hash)) throw new ServiceClientError("invalid_request", `Unsupported reference: ${reference.filename}`); }
   for (const requirement of service.accepted_references.filter((item) => item.required)) if (!request.references.some((item) => requirement.media_types.includes(item.media_type))) throw new ServiceClientError("invalid_request", `Missing required reference: ${requirement.id}`);
+  if (catalog.schema === "service.provider-catalog.v4" && (request.references.length > catalog.reference_objects.max_objects_per_request || request.references.some((item) => item.byte_length < 1 || item.byte_length > catalog.reference_objects.max_object_bytes))) throw new ServiceClientError("invalid_request", "Reference objects exceed the encrypted delivery profile");
 }
 
 function ownedBytes(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
@@ -341,6 +399,21 @@ export function encryptedIntakeAuthorization(prepared: PreparedEncryptedSubmissi
 
 export function encryptedIntakeAuthorizationBytes(prepared: PreparedEncryptedSubmission): Uint8Array {
   return ownedBytes(new TextEncoder().encode(canonicalJson(encryptedIntakeAuthorization(prepared))));
+}
+
+export function encryptedReferenceAuthorization(prepared: PreparedEncryptedReference): EncryptedReferenceAuthorizationV1 {
+  if (!identifierPattern.test(prepared.provider_id) || !identifierPattern.test(prepared.request_id) || !identifierPattern.test(prepared.idempotency_key) || !identifierPattern.test(prepared.artifact_id) || !hashPattern.test(prepared.content_hash) || !hashPattern.test(prepared.envelope_digest) || !visibleAsciiPattern.test(prepared.recipient_key_id) || !Number.isSafeInteger(prepared.expires_at_ms) || prepared.expires_at_ms < 0) throw new ServiceClientError("invalid_request", "Prepared encrypted reference metadata is invalid");
+  return {schema: "service.encrypted-reference-authorization.v1", provider_id: prepared.provider_id, request_id: prepared.request_id, idempotency_key: prepared.idempotency_key, artifact_id: prepared.artifact_id, content_sha256: prepared.content_hash, envelope_digest_sha256: prepared.envelope_digest, recipient_key_id: prepared.recipient_key_id, envelope_expires_at_ms: prepared.expires_at_ms};
+}
+
+export function encryptedReferenceAuthorizationBytes(prepared: PreparedEncryptedReference): Uint8Array {
+  return ownedBytes(new TextEncoder().encode(canonicalJson(encryptedReferenceAuthorization(prepared))));
+}
+
+export function parseReferenceObjectResult(value: unknown): ReferenceObjectResult {
+  const root = record(value, "reference object result"); exact(root, ["schema", "request_id", "idempotency_key", "artifact_id", "content_hash", "state", "transport_receipt"], "reference object result");
+  if (root.schema !== "service.reference-object-result.v1" || root.state !== "pending") throw new ServiceClientError("incompatible_version", "Unsupported reference object result");
+  return {schema: root.schema, request_id: identifier(root.request_id, "request_id"), idempotency_key: identifier(root.idempotency_key, "idempotency_key"), artifact_id: identifier(root.artifact_id, "artifact_id"), content_hash: hash(root.content_hash, "content_hash"), state: "pending", transport_receipt: parseTransportReceipt(root.transport_receipt)};
 }
 
 export function clientReadAuthorizationBytes(request: Pick<AuthorizationRequest, "operation" | "resource" | "method" | "body_digest">): Uint8Array {
@@ -373,7 +446,7 @@ export class ServiceClient {
   async catalog(): Promise<ProviderCatalog> { const response = await this.fetch(`${this.baseUrl}/v1/provider`, {headers: {Accept: "application/json"}, credentials: "omit", redirect: "error"}); return parseProviderCatalog(await this.response(response, false)); }
   async putArtifact(manifest: ArtifactManifest, bytes: Uint8Array): Promise<ArtifactManifest> { const body = ownedBytes(bytes); if (body.byteLength !== manifest.byte_length || await sha256(body) !== manifest.content_hash) throw new ServiceClientError("invalid_request", "Artifact bytes do not match the immutable manifest"); const url = `${this.baseUrl}/v1/client/artifacts/${encodeURIComponent(manifest.content_hash)}`; const headers = await this.authorize({operation: "artifact.put", resource: `artifacts/${manifest.content_hash}`, method: "PUT", url, body_digest: manifest.content_hash}); const response = await this.fetch(url, {method: "PUT", headers: {...headers, "Content-Type": manifest.media_type, "Content-Length": String(body.byteLength), "X-Artifact-Id": manifest.artifact_id, "X-Artifact-Filename": encodeURIComponent(manifest.filename)}, body: body.buffer, credentials: "omit", redirect: "error"}); return parseArtifact(await this.response(response, true)); }
   async submit(request: IntakeRequest, catalog?: ProviderCatalog): Promise<IntakeResult> { if (catalog) validateIntake(request, catalog); const valuesDigest = await sha256(new TextEncoder().encode(canonicalJson(request.brief.values))); if (valuesDigest !== request.brief.content_hash) throw new ServiceClientError("invalid_request", "Reviewed brief values do not match content_hash"); const body = ownedBytes(new TextEncoder().encode(canonicalJson(request))); const bodyDigest = await sha256(body); const url = `${this.baseUrl}/v1/client/requests`; const headers = await this.authorize({operation: "request.submit", resource: `requests/${request.request_id}`, method: "POST", url, body_digest: bodyDigest}); let response: Response; try { response = await this.fetch(url, {method: "POST", headers: {...headers, "Content-Type": "application/json", "Idempotency-Key": request.idempotency_key}, body: body.buffer, credentials: "omit", redirect: "error"}); } catch { throw new ServiceClientError("transport_error", "The submission outcome is unknown; retry the exact request.", {retryable: true, uncertain: true}); } return parseIntakeResult(await this.response(response, true)); }
-  async prepareEncrypted(request: IntakeRequest, catalog: EncryptedProviderCatalog, options: { authority: Pick<EncryptedSubmissionAuthority, "evidence">; sealer: IntakeEnvelopeSealer; now?: number }): Promise<PreparedEncryptedSubmission> {
+  private async prepareEncryptedParts(request: IntakeRequest, catalog: EncryptedProviderCatalog, options: { authority: Pick<EncryptedSubmissionAuthority, "evidence">; sealer: IntakeEnvelopeSealer; now?: number }): Promise<{prepared: PreparedEncryptedSubmission; evidence: Uint8Array}> {
     validateIntake(request, catalog);
     const valuesDigest = await sha256(new TextEncoder().encode(canonicalJson(request.brief.values)));
     if (valuesDigest !== request.brief.content_hash) throw new ServiceClientError("invalid_request", "Reviewed brief values do not match content_hash");
@@ -384,12 +457,62 @@ export class ServiceClient {
     if (expiresAt - now < 60000) throw new ServiceClientError("expired", "The provider intake key expires too soon");
     const url = this.intakeUrl(catalog.intake.endpoint);
     const authorization = {operation: "request.submit", resource: `requests/${request.request_id}`, method: "POST", url, body_digest: intakeDigest, provider_id: request.service.provider_id, request_id: request.request_id, idempotency_key: request.idempotency_key, recipient_key_id: catalog.intake.envelope.recipient_key_id, expires_at_ms: expiresAt} as const;
-    const requesterEvidence = await options.authority.evidence({...authorization, intake: ownedBytes(intake)});
+    const requesterEvidence = ownedBytes(await options.authority.evidence({...authorization, intake: ownedBytes(intake)}));
     if (!(requesterEvidence instanceof Uint8Array) || requesterEvidence.byteLength < 1 || requesterEvidence.byteLength > maxRequesterEvidence) throw new ServiceClientError("invalid_request", "Requester evidence is invalid");
     const envelope = ownedBytes(await options.sealer.seal({intake, requester_evidence: ownedBytes(requesterEvidence), profile: catalog.intake.envelope, expires_at_ms: expiresAt}));
     if (envelope.byteLength < 1 || envelope.byteLength > maxEncryptedEnvelope) throw new ServiceClientError("invalid_request", "Encrypted intake envelope is invalid");
     const envelopeDigest = await sha256(envelope);
-    return {endpoint: url, envelope: ownedBytes(envelope), envelope_digest: envelopeDigest, intake_digest: intakeDigest, provider_id: request.service.provider_id, request_id: request.request_id, idempotency_key: request.idempotency_key, recipient_key_id: catalog.intake.envelope.recipient_key_id, expires_at_ms: expiresAt};
+    return {prepared: {endpoint: url, envelope: ownedBytes(envelope), envelope_digest: envelopeDigest, intake_digest: intakeDigest, provider_id: request.service.provider_id, request_id: request.request_id, idempotency_key: request.idempotency_key, recipient_key_id: catalog.intake.envelope.recipient_key_id, expires_at_ms: expiresAt}, evidence: requesterEvidence};
+  }
+  async prepareEncrypted(request: IntakeRequest, catalog: EncryptedProviderCatalog, options: { authority: Pick<EncryptedSubmissionAuthority, "evidence">; sealer: IntakeEnvelopeSealer; now?: number }): Promise<PreparedEncryptedSubmission> {
+    const value = await this.prepareEncryptedParts(request, catalog, options);
+    value.evidence.fill(0);
+    return value.prepared;
+  }
+  async prepareEncryptedBundle(request: IntakeRequest, catalog: ProviderCatalogV4,
+    reference: {manifest: ArtifactManifest; bytes: Uint8Array} | null,
+    options: {authority: Pick<EncryptedSubmissionAuthority, "evidence">;
+      sealer: IntakeEnvelopeSealer; referenceSealer: ReferenceObjectEnvelopeSealer; now?: number}): Promise<PreparedEncryptedBundle> {
+    if ((request.references.length === 0) !== (reference === null)) throw new ServiceClientError("invalid_request", "The encrypted bundle must supply every reviewed reference original");
+    const value = await this.prepareEncryptedParts(request, catalog, options);
+    try {
+      const preparedReference = reference === null ? null : await this.prepareEncryptedReference(
+        request, catalog, reference.manifest, reference.bytes, value.evidence,
+        options.referenceSealer, options.now);
+      return {request: value.prepared, reference: preparedReference};
+    } finally {
+      value.evidence.fill(0);
+    }
+  }
+  async prepareEncryptedReference(request: IntakeRequest, catalog: ProviderCatalogV4,
+    manifest: ArtifactManifest, bytes: Uint8Array, requesterEvidence: Uint8Array,
+    sealer: ReferenceObjectEnvelopeSealer, now = Date.now()): Promise<PreparedEncryptedReference> {
+    validateIntake(request, catalog);
+    if (request.references.length > catalog.reference_objects.max_objects_per_request || !request.references.some((item) => item.artifact_id === manifest.artifact_id && item.content_hash === manifest.content_hash && item.byte_length === manifest.byte_length && item.media_type === manifest.media_type && item.filename === manifest.filename)) throw new ServiceClientError("invalid_request", "Reference manifest is not part of the reviewed request");
+    const object = ownedBytes(bytes), evidence = ownedBytes(requesterEvidence);
+    if (object.byteLength !== manifest.byte_length || object.byteLength < 1 || object.byteLength > catalog.reference_objects.max_object_bytes || await sha256(object) !== manifest.content_hash) throw new ServiceClientError("invalid_request", "Reference bytes do not match the immutable manifest");
+    if (evidence.byteLength < 1 || evidence.byteLength > maxRequesterEvidence) throw new ServiceClientError("invalid_request", "Requester evidence is invalid");
+    const profile = catalog.reference_objects.envelope, notBefore = Date.parse(profile.not_before), notAfter = Date.parse(profile.not_after);
+    if (!Number.isSafeInteger(now) || now < notBefore || now >= notAfter) throw new ServiceClientError("expired", "The provider reference key is not currently valid");
+    const expiresAt = Math.min(now + catalog.reference_objects.max_retention_seconds * 1000, notAfter);
+    if (expiresAt - now < 60000) throw new ServiceClientError("expired", "The provider reference key expires too soon");
+    const envelope = ownedBytes(await sealer.sealReferenceObject({request_id: request.request_id, idempotency_key: request.idempotency_key, artifact_id: manifest.artifact_id, content_hash: manifest.content_hash, object, requester_evidence: evidence, profile, expires_at_ms: expiresAt}));
+    if (envelope.byteLength < 1 || envelope.byteLength > maxReferenceObjectEnvelope) throw new ServiceClientError("invalid_request", "Encrypted reference envelope is invalid");
+    return {endpoint: this.intakeUrl(catalog.reference_objects.endpoint), envelope, envelope_digest: await sha256(envelope), content_hash: manifest.content_hash, provider_id: request.service.provider_id, request_id: request.request_id, idempotency_key: request.idempotency_key, artifact_id: manifest.artifact_id, recipient_key_id: profile.recipient_key_id, expires_at_ms: expiresAt};
+  }
+  async sendPreparedEncryptedReference(prepared: PreparedEncryptedReference,
+    authority: EncryptedReferenceSubmissionAuthority, now = Date.now()): Promise<ReferenceObjectResult> {
+    const envelope = ownedBytes(prepared.envelope);
+    if (!Number.isSafeInteger(now) || !Number.isSafeInteger(prepared.expires_at_ms) || now >= prepared.expires_at_ms) throw new ServiceClientError("expired", "The prepared encrypted reference has expired");
+    encryptedReferenceAuthorization(prepared);
+    if (envelope.byteLength < 1 || envelope.byteLength > maxReferenceObjectEnvelope || await sha256(envelope) !== prepared.envelope_digest) throw new ServiceClientError("invalid_request", "Prepared encrypted reference was changed");
+    const url = this.intakeUrl(prepared.endpoint);
+    const authorizedHeaders = await authority.authorize({operation: "reference.submit", resource: `requests/${prepared.request_id}/references/${prepared.artifact_id}`, method: "POST", url, body_digest: prepared.content_hash, provider_id: prepared.provider_id, request_id: prepared.request_id, idempotency_key: prepared.idempotency_key, recipient_key_id: prepared.recipient_key_id, expires_at_ms: prepared.expires_at_ms, artifact_id: prepared.artifact_id, content_hash: prepared.content_hash, envelope_digest: prepared.envelope_digest});
+    const headers: Record<string, string> = {}, reserved = new Set(["content-type", "content-length", "host", "idempotency-key", "x-zenith-request-id", "x-zenith-provider-id", "x-zenith-artifact-id", "x-zenith-content-sha256", "x-zenith-envelope-key-id", "x-zenith-envelope-expires-at"]);
+    for (const [key, value] of Object.entries(authorizedHeaders)) { if (reserved.has(key.toLowerCase()) || typeof value !== "string" || /[\r\n]/.test(value)) throw new ServiceClientError("invalid_request", "Encrypted reference headers are invalid"); headers[key] = value; }
+    Object.assign(headers, {"Content-Type": "application/vnd.zenith.service-reference-object-envelope-v1", "Content-Length": String(envelope.byteLength), "Idempotency-Key": prepared.idempotency_key, "X-Zenith-Request-Id": prepared.request_id, "X-Zenith-Provider-Id": prepared.provider_id, "X-Zenith-Artifact-Id": prepared.artifact_id, "X-Zenith-Content-SHA256": prepared.content_hash, "X-Zenith-Envelope-Key-Id": prepared.recipient_key_id, "X-Zenith-Envelope-Expires-At": String(prepared.expires_at_ms)});
+    let response: Response; try { response = await this.fetch(url, {method: "POST", headers, body: envelope.buffer, credentials: "omit", redirect: "error"}); } catch { throw new ServiceClientError("transport_error", "The encrypted reference outcome is unknown; retry the exact envelope.", {retryable: true, uncertain: true}); }
+    return parseReferenceObjectResult(await this.response(response, true));
   }
   async sendPreparedEncrypted(prepared: PreparedEncryptedSubmission, authority: Pick<EncryptedSubmissionAuthority, "authorize">, now = Date.now()): Promise<IntakeResult> {
     const envelope = ownedBytes(prepared.envelope);

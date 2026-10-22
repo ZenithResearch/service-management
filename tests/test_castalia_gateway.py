@@ -13,16 +13,18 @@ from service_management.castalia_gateway import (
     CastaliaClientReadPolicy,
     CastaliaClientReadVerifier,
     CastaliaEncryptedGatewayVerifier,
+    CastaliaEncryptedReferenceVerifier,
     CastaliaGatewayPolicy,
     client_read_authorization,
     encrypted_intake_authorization,
+    encrypted_reference_authorization,
 )
 from service_management.castalia_requester import (
     CREDENTIAL_SIGNATURE_DOMAIN,
     PRESENTATION_SIGNATURE_DOMAIN,
     WalletPresentationPin,
 )
-from service_management.client_gateway import EncryptedGatewaySubmission
+from service_management.client_gateway import EncryptedGatewaySubmission, EncryptedReferenceSubmission
 from service_management.contracts import canonical
 from service_management.errors import ServiceError
 
@@ -50,8 +52,8 @@ class CastaliaEncryptedGatewayVerifierTests(unittest.TestCase):
         self.now = datetime.fromtimestamp(1_800_000_001, tz=UTC)
         self.required_until = self.now + timedelta(days=7)
 
-    def evidence(self):
-        authorization = encrypted_intake_authorization(
+    def evidence(self, authorization=None):
+        authorization = authorization or encrypted_intake_authorization(
             self.submission, self.envelope_digest, recipient_key_id=self.key_id,
             expires_at_ms=int(self.required_until.timestamp() * 1000))
         raw = canonical(authorization).encode()
@@ -119,6 +121,26 @@ class CastaliaEncryptedGatewayVerifierTests(unittest.TestCase):
         self.verify(self.evidence())
         with self.assertRaises(ServiceError):
             self.verify(self.evidence(), now=datetime.fromtimestamp(1_800_000_061, tz=UTC))
+
+    def test_reference_verifier_binds_artifact_content_and_envelope(self):
+        submission = EncryptedReferenceSubmission(
+            self.submission.request_id, self.submission.idempotency_key, "zenith",
+            "reference-1", "33" * 32)
+        authorization = encrypted_reference_authorization(
+            submission, self.envelope_digest, recipient_key_id=self.key_id,
+            expires_at_ms=int(self.required_until.timestamp() * 1000))
+        proof = canonical(self.evidence(authorization)).encode()
+        requester = CastaliaEncryptedReferenceVerifier(self.policy).verify(
+            submission, self.envelope_digest, proof, now=self.now,
+            required_until=self.required_until)
+        self.assertEqual(requester.subject, "did.castalia.key." + public(self.holder))
+        changed = EncryptedReferenceSubmission(
+            submission.request_id, submission.idempotency_key, "zenith",
+            submission.artifact_id, "44" * 32)
+        with self.assertRaises(ServiceError):
+            CastaliaEncryptedReferenceVerifier(self.policy).verify(
+                changed, self.envelope_digest, proof, now=self.now,
+                required_until=self.required_until)
 
 
 @unittest.skipIf(Ed25519PrivateKey is None, "install service-management[castalia-verifier]")

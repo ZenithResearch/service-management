@@ -25,6 +25,7 @@ from .errors import ServiceError
 
 MAX_INTAKE_BODY = 65_536
 MAX_EVIDENCE_BODY = 262_144
+MAX_REFERENCE_OBJECT = 524_288
 SHA256 = set("0123456789abcdef")
 
 
@@ -152,6 +153,16 @@ class OpenedEnvelope:
 
 
 @dataclass(frozen=True)
+class OpenedReferenceObject:
+    request_id: str
+    idempotency_key: str
+    artifact_id: str
+    content_hash: str
+    content: bytes
+    requester_evidence: bytes
+
+
+@dataclass(frozen=True)
 class Delivery:
     handle: str
     payload: bytes
@@ -166,6 +177,12 @@ class ReachableInbox(Protocol):
 class EnvelopeOpener(Protocol):
     def open(self, payload: bytes) -> OpenedEnvelope:
         """Authenticate/decrypt transport; never infer requester authority."""
+        ...
+
+
+class ReferenceObjectOpener(Protocol):
+    def open_reference(self, payload: bytes) -> OpenedReferenceObject:
+        """Authenticate/decrypt one object; never infer requester authority."""
         ...
 
 
@@ -245,7 +262,7 @@ class UnknownAdmissionOutcome(Exception):
 class IntakeStore:
     """Separate durable inbox state; the canonical service DB remains authoritative."""
 
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
 
     def __init__(self, database: str | Path, *, timeout: float = 5.0):
         if str(database) == ":memory:":
@@ -301,7 +318,17 @@ class IntakeStore:
                     connection.execute("""INSERT INTO provider_lifecycle(request_id,stage)
                         SELECT request_id,'request_admitted' FROM client_intake WHERE state='admitted'""")
                     connection.execute("CREATE INDEX provider_lifecycle_pending ON provider_lifecycle(stage,authority_state,request_id)")
-                connection.execute("PRAGMA user_version = 3")
+                if version < 4:
+                    connection.execute("""CREATE TABLE provider_reference_object (
+                        request_id TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+                        artifact_id TEXT NOT NULL, content_hash TEXT NOT NULL
+                            CHECK(length(content_hash)=64), content BLOB NOT NULL,
+                        requester_evidence BLOB NOT NULL, transport_receipt_json TEXT NOT NULL,
+                        PRIMARY KEY(request_id,artifact_id),
+                        UNIQUE(idempotency_key,artifact_id))""")
+                    connection.execute("CREATE INDEX provider_reference_request "
+                                       "ON provider_reference_object(request_id,idempotency_key)")
+                connection.execute("PRAGMA user_version = 4")
                 connection.commit()
                 os.chmod(self.database, 0o600)
             except BaseException:
@@ -320,7 +347,7 @@ class IntakeStore:
                 return False
             tables = {row[0] for row in connection.execute(
                 "SELECT name FROM sqlite_schema WHERE type='table'")}
-            return {"client_intake", "provider_lifecycle"} <= tables
+            return {"client_intake", "provider_lifecycle", "provider_reference_object"} <= tables
         except (sqlite3.DatabaseError, OSError):
             return False
         finally:
@@ -363,6 +390,93 @@ class IntakeStore:
                 raise ServiceError("storage_unavailable") from None
             finally:
                 connection.close()
+
+    def ingest_reference(self, opened: OpenedReferenceObject,
+                         receipt: TransportReceipt) -> dict:
+        if (not isinstance(opened, OpenedReferenceObject)
+                or not identifier(opened.request_id)
+                or not identifier(opened.idempotency_key)
+                or not identifier(opened.artifact_id)
+                or not _sha256(opened.content_hash)
+                or not isinstance(opened.content, bytes)
+                or not 0 < len(opened.content) <= MAX_REFERENCE_OBJECT
+                or _digest(opened.content) != opened.content_hash
+                or not isinstance(opened.requester_evidence, bytes)
+                or not 0 < len(opened.requester_evidence) <= MAX_EVIDENCE_BODY):
+            raise ServiceError("invalid_command")
+        receipt.validate()
+        receipt_json = canonical(receipt.as_dict())
+        with self._writer:
+            connection = self._connect()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                rows = connection.execute(
+                    "SELECT * FROM provider_reference_object WHERE "
+                    "(request_id=? AND artifact_id=?) OR (idempotency_key=? AND artifact_id=?)",
+                    (opened.request_id, opened.artifact_id,
+                     opened.idempotency_key, opened.artifact_id)).fetchall()
+                if rows:
+                    row = rows[0]
+                    if (len(rows) != 1 or row["request_id"] != opened.request_id
+                            or row["idempotency_key"] != opened.idempotency_key
+                            or row["artifact_id"] != opened.artifact_id
+                            or row["content_hash"] != opened.content_hash
+                            or bytes(row["content"]) != opened.content
+                            or bytes(row["requester_evidence"]) != opened.requester_evidence):
+                        raise ServiceError("idempotency_conflict")
+                else:
+                    connection.execute("""INSERT INTO provider_reference_object(
+                        request_id,idempotency_key,artifact_id,content_hash,content,
+                        requester_evidence,transport_receipt_json) VALUES(?,?,?,?,?,?,?)""",
+                        (opened.request_id, opened.idempotency_key, opened.artifact_id,
+                         opened.content_hash, opened.content, opened.requester_evidence,
+                         receipt_json))
+                connection.commit()
+                return {"schema": "service.reference-object-result.v1",
+                        "request_id": opened.request_id,
+                        "idempotency_key": opened.idempotency_key,
+                        "artifact_id": opened.artifact_id,
+                        "content_hash": opened.content_hash,
+                        "state": "retained", "transport_receipt": receipt.as_dict()}
+            except sqlite3.DatabaseError:
+                connection.rollback()
+                raise ServiceError("storage_unavailable") from None
+            finally:
+                connection.close()
+
+    def reference_objects_for_intake(self, intake: Intake,
+                                     requester_evidence: bytes) -> list[dict] | None:
+        """Return exact verified originals, or None while expected objects are missing."""
+        manifests = json.loads(intake.references_json)
+        if len(manifests) > 1:
+            raise ServiceError("invalid_command")
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                "SELECT * FROM provider_reference_object WHERE request_id=? OR idempotency_key=? "
+                "ORDER BY artifact_id", (intake.request_id, intake.idempotency_key)).fetchall()
+        finally:
+            connection.close()
+        if len(rows) < len(manifests):
+            return None
+        if len(rows) != len(manifests):
+            raise ServiceError("idempotency_conflict")
+        by_id = {row["artifact_id"]: row for row in rows}
+        result = []
+        for manifest in manifests:
+            row = by_id.get(manifest["artifact_id"])
+            if row is None:
+                return None
+            content = bytes(row["content"])
+            if (row["request_id"] != intake.request_id
+                    or row["idempotency_key"] != intake.idempotency_key
+                    or row["content_hash"] != manifest["content_hash"]
+                    or len(content) != manifest["byte_length"]
+                    or _digest(content) != manifest["content_hash"]
+                    or bytes(row["requester_evidence"]) != requester_evidence):
+                raise ServiceError("idempotency_conflict")
+            result.append({"manifest": manifest, "content": content})
+        return result
 
     @staticmethod
     def _result(row: sqlite3.Row) -> dict:
@@ -540,7 +654,7 @@ class IntakeStore:
         authority_state = "resume_required" if recovery else "fresh"
         connection = self._connect()
         try:
-            return [dict(row) for row in connection.execute("""SELECT i.intake_json,l.*
+            return [dict(row) for row in connection.execute("""SELECT i.intake_json,i.requester_evidence,l.*
                 FROM provider_lifecycle l JOIN client_intake i USING(request_id)
                 WHERE i.state='admitted' AND l.stage!='approved' AND l.authority_state=?
                 ORDER BY l.request_id LIMIT ?""", (authority_state, limit))]
@@ -700,6 +814,9 @@ class AdmissionWorker:
         results = []
         for row in self.store.pending(limit=limit, recovery=recovery):
             intake = Intake.parse(row["intake_json"].encode("utf-8"))
+            if self.store.reference_objects_for_intake(
+                    intake, bytes(row["requester_evidence"])) is None:
+                continue
             receipt_value = json.loads(row["transport_receipt_json"])
             receipt = TransportReceipt(receipt_value["transport"], receipt_value["receipt_id"],
                                        receipt_value["recorded_at"], receipt_value["expires_at"])

@@ -10,6 +10,9 @@ This is reviewable implementation preparation for the foundation tasks:
 readiness or completion. Source-owned handoff, explicit plan revisions, and runtime
 summary projection preparation are also included; their exact task IDs and
 integration boundaries are in [ADR 0002](docs/adr/0002-runtime-handoff-and-plan-revisions.md).
+The separately encrypted reference-object route and immutable executor input path
+are specified in
+[ADR 0003](docs/adr/0003-encrypted-reference-delivery-and-execution-materialization.md).
 
 The [Zenith member ingress boundary](docs/zenith-member-ingress.md) describes how
 an Anima producer can submit an existing closed command after membership and
@@ -19,7 +22,9 @@ adds a durable pull worker in front of that canonical command boundary. It recor
 an exact reviewed intake before acknowledging an external inbox, preserves one
 stable admission command across restart and unknown outcomes, and keeps dispatcher
 authentication, requester membership and Service Management command authority
-separate.
+separate. Provider catalog v4 adds a separately authorized encrypted route for
+zero or one selected reference object up to 512 KiB; admission waits for the exact
+verified original and the lifecycle commits it into the Runtime input artifact.
 
 ## Run locally
 

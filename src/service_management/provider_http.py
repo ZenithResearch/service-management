@@ -13,9 +13,13 @@ from .castalia_credential import ReceiverCredentialIssuer
 from .client_gateway import (
     EncryptedGatewaySubmission,
     EncryptedIntakeGateway,
+    EncryptedReferenceGateway,
+    EncryptedReferenceSubmission,
     MAX_ENCRYPTED_ENVELOPE,
+    MAX_REFERENCE_OBJECT_ENVELOPE,
     UnknownGatewayOutcome,
     parse_intake_envelope_header,
+    parse_reference_object_envelope_header,
 )
 from .contracts import canonical, identifier
 from .errors import ServiceError
@@ -53,13 +57,15 @@ class ProviderHttpConfig:
     browser_origin: str
     credential_path: str = "/v1/request-credential"
     intake_path: str = "/v1/client/requests"
+    reference_path: str = "/v1/client/reference-objects"
     status_base_url: str | None = None
 
     def __post_init__(self):
         if (not isinstance(self.browser_origin, str) or not self.browser_origin.startswith("https://")
                 or self.browser_origin.endswith("/") or any(c in self.browser_origin for c in "?#")
                 or not self.credential_path.startswith("/") or not self.intake_path.startswith("/")
-                or self.credential_path == self.intake_path):
+                or not self.reference_path.startswith("/")
+                or len({self.credential_path, self.intake_path, self.reference_path}) != 3):
             raise ValueError("invalid provider HTTP configuration")
         if self.status_base_url is not None:
             from urllib.parse import urlsplit
@@ -78,11 +84,14 @@ class ProviderHttpApplication:
 
     def __init__(self, config: ProviderHttpConfig, credential_issuer: ReceiverCredentialIssuer | None,
                  intake_gateway: EncryptedIntakeGateway | None, *, client_reader=None,
-                 read_authorizer=None, read_only: bool = False):
+                 read_authorizer=None, reference_gateway: EncryptedReferenceGateway | None = None,
+                 read_only: bool = False):
         self.config, self.credential_issuer, self.intake_gateway = (
             config, credential_issuer, intake_gateway)
+        self.reference_gateway = reference_gateway
         self.client_reader, self.read_authorizer, self.read_only = client_reader, read_authorizer, read_only
         if read_only and (credential_issuer is not None or intake_gateway is not None
+                          or reference_gateway is not None
                           or client_reader is None or read_authorizer is None):
             raise ValueError("read-only provider HTTP requires only projection dependencies")
 
@@ -106,6 +115,8 @@ class ProviderHttpApplication:
                 return self._credential(request.body, headers)
             if request.path == self.config.intake_path:
                 return await self._intake(request.body, headers)
+            if request.path == self.config.reference_path:
+                return await self._reference(request.body, headers)
             return self._error(404, "not_found", "The provider route does not exist.", False, request_id)
         except UnknownGatewayOutcome:
             return self._error(503, "unavailable", "The queue outcome is unknown; retry the exact prepared envelope.", True, request_id)
@@ -148,6 +159,34 @@ class ProviderHttpApplication:
             body, submission=submission, requester_presentation=presentation)
         if self.config.status_base_url is not None:
             result = {**result, "status_url": self.config.status_base_url + result["status_url"]}
+        return self._json(202, result)
+
+    async def _reference(self, body: bytes, headers: dict[str, str]) -> ProviderHttpResponse:
+        if self.reference_gateway is None:
+            raise ServiceError("runtime_unavailable")
+        self._body(headers, body,
+                   "application/vnd.zenith.service-reference-object-envelope-v1",
+                   MAX_REFERENCE_OBJECT_ENVELOPE)
+        required = ("idempotency-key", "x-zenith-request-id", "x-zenith-provider-id",
+                    "x-zenith-artifact-id", "x-zenith-content-sha256",
+                    "x-zenith-envelope-key-id", "x-zenith-envelope-expires-at",
+                    "authorization")
+        if any(not headers.get(key) for key in required):
+            raise ValueError("missing reference header")
+        authorization = headers["authorization"]
+        if not authorization.startswith("Castalia "):
+            raise ServiceError("forbidden")
+        presentation = self._base64url(authorization[9:])
+        header = parse_reference_object_envelope_header(body)
+        if (headers["x-zenith-envelope-key-id"] != header.recipient_key_id
+                or headers["x-zenith-envelope-expires-at"] != str(header.expires_at_ms)):
+            raise ValueError("envelope header mismatch")
+        submission = EncryptedReferenceSubmission(
+            headers["x-zenith-request-id"], headers["idempotency-key"],
+            headers["x-zenith-provider-id"], headers["x-zenith-artifact-id"],
+            headers["x-zenith-content-sha256"])
+        result = await self.reference_gateway.submit(
+            body, submission=submission, requester_presentation=presentation)
         return self._json(202, result)
 
     def _read(self, path: str, headers: dict[str, str]) -> ProviderHttpResponse:
@@ -229,7 +268,7 @@ class ProviderHttpApplication:
         headers = [
             ("Access-Control-Allow-Origin", self.config.browser_origin),
             ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
-            ("Access-Control-Allow-Headers", "Authorization, Content-Type, Content-Length, Idempotency-Key, X-Zenith-Request-Id, X-Zenith-Provider-Id, X-Zenith-Intake-SHA256, X-Zenith-Envelope-Key-Id, X-Zenith-Envelope-Expires-At"),
+            ("Access-Control-Allow-Headers", "Authorization, Content-Type, Content-Length, Idempotency-Key, X-Zenith-Request-Id, X-Zenith-Provider-Id, X-Zenith-Intake-SHA256, X-Zenith-Artifact-Id, X-Zenith-Content-SHA256, X-Zenith-Envelope-Key-Id, X-Zenith-Envelope-Expires-At"),
             ("Cache-Control", "no-store"), ("Vary", "Origin"),
         ]
         if body:

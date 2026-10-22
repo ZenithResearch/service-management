@@ -3,8 +3,10 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
-from service_management.client_intake import OpenedEnvelope
-from service_management.vercel_intake import VercelPollConfig, VercelPollIntake
+import hashlib
+
+from service_management.client_intake import OpenedEnvelope, OpenedReferenceObject
+from service_management.vercel_intake import VercelPollConfig, VercelPollIntake, VercelPollReferenceObjects
 from tests.test_client_intake import intake
 
 
@@ -38,6 +40,12 @@ class Opener:
         if payload != b"encrypted-envelope": raise ValueError("not the expected encrypted payload")
         return OpenedEnvelope(intake(), b"verified-membership-proof")
 
+    def open_reference(self, payload):
+        content = b"original-reference"
+        return OpenedReferenceObject(
+            "anima-brand-request-01", "anima-brand-submit-01", "reference-1",
+            hashlib.sha256(content).hexdigest(), content, b"verified-membership-proof")
+
 
 class FailingStore:
     def ingest(self, opened, receipt): raise RuntimeError("disk full")
@@ -62,6 +70,19 @@ class VercelIntakeTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "disk full"):
             await adapter.ingest_once()
         self.assertFalse(delivery.acknowledged)
+
+    async def test_reference_topic_commits_before_ack_and_can_precede_intake(self):
+        from service_management.client_intake import IntakeStore
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        store = IntakeStore(Path(temp.name) / "intake.db")
+        delivery = Delivery(Message()); queue = Queue([delivery])
+        result = await VercelPollReferenceObjects(
+            queue, "reference-topic",
+            VercelPollConfig("zenith-reference-v1", "zenith-provider-mac"),
+            Opener(), store).ingest_once()
+        self.assertTrue(delivery.acknowledged)
+        self.assertEqual(result[0]["state"], "retained")
+        self.assertEqual(result[0]["artifact_id"], "reference-1")
 
     def test_config_is_bounded(self):
         for values in [('', 'group', 1, 300), ('topic', 'bad group', 1, 300),

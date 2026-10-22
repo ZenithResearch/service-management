@@ -22,7 +22,7 @@ from .runtime_port import content_digest
 from .secs_intake import NativeSecSIntakeOpener
 from .sdk_adapter import SDKRuntimeAdapter
 from .sqlite_store import SQLiteUnitOfWork
-from .vercel_intake import VercelPollConfig, VercelPollIntake
+from .vercel_intake import VercelPollConfig, VercelPollIntake, VercelPollReferenceObjects
 from .wallet_service_authority import CastaliaWalletRuntimeAuthority, CastaliaWalletServiceAuthority
 
 
@@ -161,6 +161,20 @@ def _parser() -> argparse.ArgumentParser:
     pull.add_argument("--intake-opener", required=True)
     pull.add_argument("--intake-opener-sha256", required=True)
     pull.add_argument("--oidc-token-file", required=True)
+    pull_references = commands.add_parser(
+        "pull-references-once", help="poll one bounded encrypted-reference Queue batch")
+    for action, options in (
+        (pull_references.add_argument, ("--intake-database",)),
+        (pull_references.add_argument, ("--region",)),
+        (pull_references.add_argument, ("--topic",)),
+        (pull_references.add_argument, ("--consumer-group",)),
+        (pull_references.add_argument, ("--intake-opener",)),
+        (pull_references.add_argument, ("--intake-opener-sha256",)),
+        (pull_references.add_argument, ("--oidc-token-file",)),
+    ):
+        action(*options, required=True)
+    pull_references.add_argument("--limit", type=int, default=10)
+    pull_references.add_argument("--lease-seconds", type=int, default=300)
 
     for name, help_text in (
         ("admit-once", "verify and admit only fresh retained requests"),
@@ -224,13 +238,15 @@ def main(argv=None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     try:
-        if args.command == "pull-once":
+        if args.command in {"pull-once", "pull-references-once"}:
             store = IntakeStore(args.intake_database)
             opener = NativeSecSIntakeOpener(args.intake_opener, args.intake_opener_sha256)
             config = VercelPollConfig(args.topic, args.consumer_group, args.limit,
                                       args.lease_seconds)
-            worker = VercelPollIntake.from_sdk(region=args.region, token=_oidc_token(args.oidc_token_file),
-                                               config=config, opener=opener, store=store)
+            adapter = (VercelPollReferenceObjects if args.command == "pull-references-once"
+                       else VercelPollIntake)
+            worker = adapter.from_sdk(region=args.region, token=_oidc_token(args.oidc_token_file),
+                                      config=config, opener=opener, store=store)
             results = asyncio.run(worker.ingest_once())
         elif args.command in {"admit-once", "resume-admission-once"}:
             worker = _admission(args)

@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Added
+- Add provider-catalog v4 and a distinct encrypted reference-object route with
+  exact browser retry, Castalia authorization, independent queue consumption,
+  secS native opening, durable pre-ack storage, and admission gating. The first
+  profile carries at most one verified original up to 512 KiB into the immutable
+  Runtime reference-manifest artifact; larger or multiple files fail closed.
 - Add pinned Castalia Wallet Service/Runtime authority adapters, durable
   explicit-resume admission and handoff state, and one-shot pull/admit/recover
   worker commands — close the local provider composition gap without allowing
@@ -15,13 +20,14 @@
 - Derive the first service's outbox identity from its stable Case and immutable
   plan revision, expose a read-only activation preview, and deliver only the
   exact retained handoff selected by finite Runtime authority.
-- Add provider-catalog v3, dependency-free TypeScript client v0.8.1 and fixtures
+- Add provider-catalog v3, dependency-free TypeScript client and fixtures
   for provider-neutral discovery, reviewed intake, authoritative request/Case
   projection, deliverables and canonical receipt references.
 - Add receiver-authorized client reads over the retained requester binding,
   canonical ServiceRequest/Case state, exact Runtime Run/output/artifact data and
   canonical Runtime receipts. Frozen browser contract bundles v1-v3 remain
-  unchanged; v4 adds only the closed client-read authorization value.
+  unchanged; v4 adds the closed client-read authorization value and the
+  independently encrypted reference-object profile.
 - Add an explicit separate read-origin trust set and a numeric-loopback,
   GET/OPTIONS-only projection listener suitable for an operator-approved HTTPS
   Tailscale Funnel. Intake can return the configured path-capable response base,

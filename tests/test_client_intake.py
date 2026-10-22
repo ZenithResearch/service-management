@@ -13,6 +13,7 @@ from service_management.client_intake import (
     IntakeStore,
     NativeAuthorizedServicePort,
     OpenedEnvelope,
+    OpenedReferenceObject,
     PullWorker,
     TransportReceipt,
     UnknownAdmissionOutcome,
@@ -40,6 +41,16 @@ def intake(*, request_id="anima-brand-request-01", key="anima-brand-submit-01", 
 
 def opened(raw=None, evidence=b"membership-proof"):
     return OpenedEnvelope(raw or intake(), evidence)
+
+
+def intake_with_reference(content=b"original-reference"):
+    value = json.loads(intake())
+    value["references"] = [{"schema": "service.artifact-manifest.v1",
+                            "artifact_id": "reference-1",
+                            "content_hash": hashlib.sha256(content).hexdigest(),
+                            "byte_length": len(content), "media_type": "image/png",
+                            "filename": "reference.png"}]
+    return canonical(value).encode()
 
 
 def receipt():
@@ -138,6 +149,32 @@ class ClientIntakeTests(unittest.TestCase):
         with self.assertRaises(ServiceError) as evidence:
             self.intakes.ingest(opened(evidence=b"different-membership-proof"), receipt())
         self.assertEqual(evidence.exception.code, "idempotency_conflict")
+
+    def test_reference_can_arrive_before_or_after_intake_and_gates_admission(self):
+        content, evidence = b"original-reference", b"membership-proof"
+        reference = OpenedReferenceObject(
+            "anima-brand-request-01", "anima-brand-submit-01", "reference-1",
+            hashlib.sha256(content).hexdigest(), content, evidence)
+        self.intakes.ingest_reference(reference, receipt())
+        self.intakes.ingest(opened(intake_with_reference(), evidence), receipt())
+        port = LocalServicePort(self.ingress)
+        result = AdmissionWorker(self.intakes, MemberVerifier(), port).admit_once()
+        self.assertEqual(result[0]["state"], "admitted")
+        exact = self.intakes.reference_objects_for_intake(
+            Intake.parse(intake_with_reference()), evidence)
+        self.assertEqual(exact[0]["content"], content)
+
+        other = IntakeStore(self.root / "other-intake.db")
+        other.ingest(opened(intake_with_reference(), evidence), receipt())
+        waiting = LocalServicePort(self.ingress)
+        self.assertEqual(AdmissionWorker(other, MemberVerifier(), waiting).admit_once(), [])
+        self.assertEqual(waiting.commands, [])
+        other.ingest_reference(OpenedReferenceObject(
+            reference.request_id, reference.idempotency_key, reference.artifact_id,
+            reference.content_hash, content, b"different-evidence"), receipt())
+        with self.assertRaises(ServiceError) as mismatch:
+            AdmissionWorker(other, MemberVerifier(), waiting).admit_once()
+        self.assertEqual(mismatch.exception.code, "idempotency_conflict")
 
     def test_unknown_service_result_retries_same_command_without_duplicate_request(self):
         self.intakes.ingest(opened(), receipt())

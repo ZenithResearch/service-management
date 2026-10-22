@@ -4,6 +4,7 @@ import unittest
 
 from service_management.client_gateway import (
     INTAKE_ENVELOPE_MAGIC,
+    REFERENCE_OBJECT_ENVELOPE_MAGIC,
     UnknownGatewayOutcome,
 )
 from service_management.provider_http import (
@@ -23,6 +24,13 @@ def envelope(expires_at_ms=1_900_000_000_000):
             + key + b"e" * 32 + b"n" * 12 + len(ciphertext).to_bytes(4, "big") + ciphertext)
 
 
+def reference_envelope(expires_at_ms=1_900_000_000_000):
+    key = KEY_ID.encode(); ciphertext = b"0" * 16
+    return (REFERENCE_OBJECT_ENVELOPE_MAGIC + expires_at_ms.to_bytes(8, "big")
+            + bytes([len(key)]) + key + b"e" * 32 + b"n" * 12
+            + len(ciphertext).to_bytes(4, "big") + ciphertext)
+
+
 class Issuer:
     def __init__(self): self.calls = []
     def issue(self, body):
@@ -35,6 +43,15 @@ class Gateway:
     async def submit(self, body, *, submission, requester_presentation):
         self.calls.append((body, submission, requester_presentation))
         if self.unknown: raise UnknownGatewayOutcome()
+        if hasattr(submission, "artifact_id"):
+            return {"schema": "service.reference-object-result.v1",
+                    "request_id": submission.request_id,
+                    "idempotency_key": submission.idempotency_key,
+                    "artifact_id": submission.artifact_id,
+                    "content_hash": submission.content_hash, "state": "pending",
+                    "transport_receipt": {"transport": "fixture", "receipt_id": "receipt-1",
+                                          "recorded_at": "2026-10-22T08:00:00.000Z",
+                                          "expires_at": None}}
         return {"schema": "service.intake-result.v1", "request_id": submission.request_id,
                 "idempotency_key": submission.idempotency_key, "state": "pending",
                 "transport_receipt": None, "service_request_id": None,
@@ -67,7 +84,8 @@ class ProviderHttpApplicationTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.issuer, self.gateway = Issuer(), Gateway()
         self.app = ProviderHttpApplication(
-            ProviderHttpConfig("https://anima.example"), self.issuer, self.gateway)
+            ProviderHttpConfig("https://anima.example"), self.issuer, self.gateway,
+            reference_gateway=self.gateway)
 
     async def test_credential_issuance_has_exact_origin_and_no_ambient_credentials(self):
         body = b'{"fixture":true}'
@@ -100,6 +118,27 @@ class ProviderHttpApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(submission.intake_digest, "11" * 32)
         self.assertEqual(presentation, b'{"proof":"fixture"}')
         self.assertEqual(json.loads(result.body)["state"], "pending")
+
+    async def test_encrypted_reference_maps_only_bound_metadata_and_ciphertext(self):
+        body = reference_envelope()
+        proof = base64.urlsafe_b64encode(b'{"proof":"reference"}').decode().rstrip("=")
+        result = await self.app.handle(ProviderHttpRequest(
+            "POST", "/v1/client/reference-objects", headers(
+                ("Content-Type", "application/vnd.zenith.service-reference-object-envelope-v1"),
+                ("Content-Length", str(len(body))), ("Authorization", "Castalia " + proof),
+                ("Idempotency-Key", "anima-brand-submit-01"),
+                ("X-Zenith-Request-Id", "anima-brand-request-01"),
+                ("X-Zenith-Provider-Id", "zenith"),
+                ("X-Zenith-Artifact-Id", "reference-1"),
+                ("X-Zenith-Content-SHA256", "11" * 32),
+                ("X-Zenith-Envelope-Key-Id", KEY_ID),
+                ("X-Zenith-Envelope-Expires-At", "1900000000000")), body))
+        self.assertEqual(result.status, 202)
+        sent, submission, presentation = self.gateway.calls[0]
+        self.assertEqual(sent, body)
+        self.assertEqual(submission.artifact_id, "reference-1")
+        self.assertEqual(submission.content_hash, "11" * 32)
+        self.assertEqual(presentation, b'{"proof":"reference"}')
 
     async def test_origin_duplicates_header_mismatch_and_unknown_outcome_fail_closed(self):
         denied = await self.app.handle(ProviderHttpRequest(

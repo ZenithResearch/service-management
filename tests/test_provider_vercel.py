@@ -37,6 +37,7 @@ class ProviderVercelCompositionTests(unittest.TestCase):
             "ZENITH_RECEIVER_SIGNING_SEED_B64": self.seed,
             "ZENITH_QUEUE_REGION": "sfo1",
             "ZENITH_QUEUE_TOPIC": "zenith-intake-v1",
+            "ZENITH_REFERENCE_QUEUE_TOPIC": "zenith-reference-v1",
             "ZENITH_STATUS_BASE_URL": "https://operator-response.example",
             "VERCEL_OIDC_TOKEN": "a.b.c",
         }
@@ -49,10 +50,14 @@ class ProviderVercelCompositionTests(unittest.TestCase):
         self.assertEqual(app.intake_gateway.config.provider_id, "zenith")
         self.assertEqual(app.intake_gateway.config.recipient_key_id,
                          "tunnel:x25519:provider-1")
+        self.assertEqual(app.reference_gateway.config.recipient_key_id,
+                         "tunnel:x25519:provider-1")
         self.assertEqual(app.config.status_base_url,
                          "https://operator-response.example")
-        factory.assert_called_once_with(region="sfo1", token="a.b.c",
-                                        topic="zenith-intake-v1")
+        self.assertEqual(factory.call_args_list[0].kwargs,
+                         {"region": "sfo1", "token": "a.b.c", "topic": "zenith-intake-v1"})
+        self.assertEqual(factory.call_args_list[1].kwargs,
+                         {"region": "sfo1", "token": "a.b.c", "topic": "zenith-reference-v1"})
 
     @patch("service_management.provider_vercel.VercelQueuePublisher.from_sdk",
            return_value=Publisher())
