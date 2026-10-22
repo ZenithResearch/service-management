@@ -19,12 +19,12 @@ request was admitted, a Case was created, a process ran or a deliverable exists.
 | Reference topic | `zenith-reference-v1` |
 | Request consumer group | `zenith-provider-mac` |
 | Reference consumer group | `zenith-provider-mac-reference` |
-| Request/reference retention | `86400` seconds |
+| Request/reference retention | `604800` seconds |
 | Public routes | `/v1/request-credential`, `/v1/client/requests`, `/v1/client/reference-objects` |
 
 Topic names and consumer groups are release configuration. Changing one creates
 a distinct transport stream and requires a new acceptance record. The current
-provider-catalog v4 fixture advertises 86,400 seconds for both request and
+provider-catalog v4 fixture advertises 604,800 seconds for both request and
 reference retention. Stored v2/v3 catalogs remain decoder-compatible but are
 not valid inputs for a new production review.
 

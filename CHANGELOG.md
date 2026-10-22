@@ -4,7 +4,7 @@
 
 - Route the separately encrypted reference-object endpoint through the production Vercel handler and regression-test every public rewrite.
 - Document the required Vercel Queue acceptance gate, including the reviewed
-  topic/group candidates, 24-hour retention, offline enqueue, local pre-ack
+  topic/group candidates, seven-day Queue retention, offline enqueue, local pre-ack
   commit, authoritative response proof, evidence set and rollback sequence.
 - Bind every Vercel Queue publication to the platform-injected runtime OIDC
   request header and reject missing, malformed or duplicate header contexts;
@@ -12,8 +12,8 @@
 
 ### Fixed
 - Align the live Vercel Queue gateway and current provider-catalog v4 fixture
-  with Vercel's 24-hour maximum retention while keeping older catalog versions
-  readable for stored-client compatibility.
+  with Vercel's current seven-day maximum retention while keeping older catalog
+  versions readable for stored-client compatibility.
 - Permit an exact numeric-loopback HTTP browser origin for local candidate
   acceptance while preserving HTTPS-only production environment composition.
 - Correct provider-catalog v2-v4 fixture recipient key identifiers to the canonical secS X25519 public-key SHA-256 prefix and enforce that interop invariant in the TypeScript suite.
