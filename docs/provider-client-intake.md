@@ -291,3 +291,9 @@ stored command through the corresponding native resume operation. Approval
 creates the ordinary durable Service outbox handoff; the separately configured
 outbox worker delivers that exact command to Runtime. Neither lifecycle command
 infers execution completion from the handoff acknowledgement.
+
+The successful `approved` result includes an `activation` object with the exact
+64-hex Runtime handoff ID and its deterministic `handoff-<first-48-hex>` Run ID.
+The installer must bind Runtime authority to both values before delivering the
+retained Service handoff; inventing either identity or granting only the Run is
+not sufficient for `handoff.consume`.

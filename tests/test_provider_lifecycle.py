@@ -131,7 +131,18 @@ class ProviderLifecycleTests(unittest.TestCase):
         self.assertEqual(self.runtime.commands[-1], ("resume", issued))
 
         self.assertEqual(self.worker.advance_once()[0]["stage"], "references_stored")
-        self.assertEqual(self.worker.advance_once()[0]["stage"], "approved")
+        approved = self.worker.advance_once()[0]
+        self.assertEqual(approved["stage"], "approved")
+        handoff = self.store.transact(lambda tx: tx.pending_handoffs("", 1))[0]
+        self.assertEqual(
+            approved["activation"]["handoff_id"],
+            content_digest({"source": "service-management", "event_id": handoff["event_id"]}),
+        )
+        self.assertEqual(
+            approved["activation"]["run_id"],
+            "handoff-" + approved["activation"]["handoff_id"][:48],
+        )
+        self.assertEqual(len(approved["activation"]["handoff_id"]), 64)
         self.assertEqual(self.intakes.lifecycle_status("anima-brand-request-01")["stage"], "approved")
 
         artifact_commands = [command for _, command in self.runtime.commands
