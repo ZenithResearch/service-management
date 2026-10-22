@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Correct provider-catalog v2-v4 fixture recipient key identifiers to the canonical secS X25519 public-key SHA-256 prefix and enforce that interop invariant in the TypeScript suite.
+
 ### Added
 - Add provider-catalog v4 and a distinct encrypted reference-object route with
   exact browser retry, Castalia authorization, independent queue consumption,

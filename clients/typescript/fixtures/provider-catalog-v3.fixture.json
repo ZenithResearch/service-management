@@ -76,7 +76,7 @@
     "envelope": {
       "schema": "service.intake-envelope.v1",
       "algorithm": "x25519-hkdf-sha256-chacha20poly1305",
-      "recipient_key_id": "tunnel:x25519:0f6d2553ff0c0f447ae202edd84383e11",
+      "recipient_key_id": "tunnel:x25519:0f6d2553ff0c0f447ae202edd84383e1",
       "recipient_public_key_hex": "13be4feaeaf204c7fd3358fc9c00721881d174278128227ec674f37f7fe97b6d",
       "not_before": "2026-10-01T00:00:00.000Z",
       "not_after": "2026-12-31T00:00:00.000Z"

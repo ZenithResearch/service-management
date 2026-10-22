@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {createHash} from "node:crypto";
 import {readFile} from "node:fs/promises";
 import test from "node:test";
 import {fileURLToPath} from "node:url";
@@ -85,6 +86,16 @@ test("catalog v3 publishes closed Castalia requester policy without changing v2"
   const altered = await fixture("provider-catalog-v3.fixture.json");
   altered.requester.credential.callers[0].id = "https://anima.example/path";
   assert.throws(() => parseProviderCatalog(altered), /canonical secure browser origin/);
+});
+
+test("catalog recipient key ids match the canonical secS public-key fingerprint", async () => {
+  for (const name of ["provider-catalog-v2.fixture.json", "provider-catalog-v3.fixture.json", "provider-catalog-v4.fixture.json"]) {
+    const catalog = parseProviderCatalog(await fixture(name)) as ProviderCatalogV2 | ProviderCatalogV3 | ProviderCatalogV4;
+    const publicKey = Buffer.from(catalog.intake.envelope.recipient_public_key_hex, "hex");
+    const expected = `tunnel:x25519:${createHash("sha256").update(publicKey).digest("hex").slice(0, 32)}`;
+    assert.equal(catalog.intake.envelope.recipient_key_id, expected);
+    if (catalog.schema === "service.provider-catalog.v4") assert.equal(catalog.reference_objects.envelope.recipient_key_id, expected);
+  }
 });
 
 test("catalog v2 publishes a bounded secS intake key without breaking v1", async () => {
