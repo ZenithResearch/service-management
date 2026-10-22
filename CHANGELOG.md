@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Install the pinned Vercel Queue and Castalia verifier extras in public-source
+  CI so the required Queue entrypoint and its runtime OIDC binding are exercised
+  by the same dependency profile used in the provider release bundle.
 - Route the separately encrypted reference-object endpoint through the production Vercel handler and regression-test every public rewrite.
 - Document the required Vercel Queue acceptance gate, including the reviewed
   topic/group candidates, seven-day Queue retention, offline enqueue, local pre-ack
