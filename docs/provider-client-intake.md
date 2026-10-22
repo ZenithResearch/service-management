@@ -206,10 +206,13 @@ closed unless all of these values are explicit:
 | `ZENITH_MEMBERSHIP_ROOTS_JSON` | Closed JSON array of accepted Zenith membership issuer roots |
 | `ZENITH_QUEUE_REGION`, `ZENITH_QUEUE_TOPIC` | Vercel region and reviewed-intake Queue route |
 | `ZENITH_REFERENCE_QUEUE_TOPIC` | Separate encrypted reference-object Queue route |
-| `VERCEL_OIDC_TOKEN` | Vercel-provided transport credential when required by the SDK |
+| `x-vercel-oidc-token` request header | Vercel-provided runtime transport credential; the entry point requires exactly one and binds Queue publication to that request context |
 | `ZENITH_STATUS_BASE_URL` | Exact HTTPS base, with optional normalized mount path, of the separately deployed authorized projection listener |
 
-The composition creates no identity, key, membership, project, Queue or paid
+The composition never captures a build-time `VERCEL_OIDC_TOKEN`; Vercel runtime
+OIDC tokens arrive on the request header and are resolved by the Queue SDK while
+that exact request context is active. The composition creates no identity, key,
+membership, project, Queue or paid
 resource. Real values must match provider-catalog v4. Secret rotation, rate
 limits, live origin configuration and deployment qualification remain release
 operations, not browser behavior.

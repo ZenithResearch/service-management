@@ -46,9 +46,12 @@ Do not invent, generate or copy these values into source control:
 `ZENITH_PROVIDER_ID=zenith`, `ZENITH_QUEUE_REGION=sfo1`,
 `ZENITH_QUEUE_TOPIC=zenith-intake-v1` and
 `ZENITH_REFERENCE_QUEUE_TOPIC=zenith-reference-v1` are the proposed non-secret
-values. `VERCEL_OIDC_TOKEN` is supplied by the Vercel deployment. The local poll
-worker receives an operator credential only through its owner-private `0600`
-token file.
+values. The public function requires Vercel's runtime `x-vercel-oidc-token`
+header and never captures a build-time token. For the first qualification, the
+local one-shot poll worker receives a freshly issued development OIDC token only
+through its owner-private `0600` token file. Development tokens expire after 12
+hours; refresh the file before this test. A supervised long-running poller needs
+a separately reviewed refresh composition before production qualification.
 
 ## Acceptance sequence
 
@@ -59,7 +62,8 @@ token file.
    protected signing seed derives the published receiver public key.
 3. Create the Vercel project and configure its protected and non-secret values.
    Deploy the checked-in `vercel.json` and `api/provider.py` from the reviewed
-   release. Confirm only the three documented public routes exist.
+   release. Confirm only the three documented public routes exist and each
+   Queue publication uses the runtime OIDC request header.
 4. Keep the operator Mac provider stack stopped. In Anima, prepare one new v4
    request with stable client request and idempotency IDs, optional one-reference
    metadata, and the exact reviewed brief. Obtain explicit Castalia Wallet

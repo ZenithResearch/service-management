@@ -7,6 +7,8 @@ from functools import lru_cache
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlsplit
 
+from vercel.headers import HeadersContext
+
 from service_management.client_gateway import MAX_ENCRYPTED_ENVELOPE
 from service_management.provider_http import ProviderHttpRequest
 from service_management.provider_vercel import provider_application_from_environment
@@ -26,6 +28,14 @@ def _route_path(raw_path: str) -> str:
     if path is None:
         raise ValueError("unsupported provider route")
     return path
+
+
+def _queue_oidc_context(headers: tuple[tuple[str, str], ...]):
+    values = [value for name, value in headers if name.lower() == "x-vercel-oidc-token"]
+    if (len(values) != 1 or not 5 <= len(values[0]) <= 16_384
+            or values[0].count(".") != 2 or any(character.isspace() for character in values[0])):
+        raise ValueError("missing or invalid Vercel OIDC request context")
+    return HeadersContext({"x-vercel-oidc-token": values[0]}).use()
 
 
 @lru_cache(maxsize=1)
@@ -53,8 +63,10 @@ class handler(BaseHTTPRequestHandler):
                 raise ValueError()
             body = self.rfile.read(length) if length else b""
             path = _route_path(self.path)
-            response = asyncio.run(_application().handle(ProviderHttpRequest(
-                method, path, tuple(self.headers.raw_items()), body)))
+            raw_headers = tuple(self.headers.raw_items())
+            with _queue_oidc_context(raw_headers):
+                response = asyncio.run(_application().handle(ProviderHttpRequest(
+                    method, path, raw_headers, body)))
         except Exception:
             payload = b'{"error":{"code":"internal_error","message":"The provider could not complete the request.","retryable":true},"request_id":null,"schema":"service.client-error.v1"}'
             self.send_response(500)

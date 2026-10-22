@@ -6,6 +6,9 @@
 - Document the required Vercel Queue acceptance gate, including the reviewed
   topic/group candidates, 24-hour retention, offline enqueue, local pre-ack
   commit, authoritative response proof, evidence set and rollback sequence.
+- Bind every Vercel Queue publication to the platform-injected runtime OIDC
+  request header and reject missing, malformed or duplicate header contexts;
+  never capture a build-time token in the cached gateway composition.
 
 ### Fixed
 - Align the live Vercel Queue gateway and current provider-catalog v4 fixture

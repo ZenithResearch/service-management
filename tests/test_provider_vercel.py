@@ -39,7 +39,6 @@ class ProviderVercelCompositionTests(unittest.TestCase):
             "ZENITH_QUEUE_TOPIC": "zenith-intake-v1",
             "ZENITH_REFERENCE_QUEUE_TOPIC": "zenith-reference-v1",
             "ZENITH_STATUS_BASE_URL": "https://operator-response.example",
-            "VERCEL_OIDC_TOKEN": "a.b.c",
         }
 
     @patch("service_management.provider_vercel.VercelQueuePublisher.from_sdk",
@@ -55,9 +54,18 @@ class ProviderVercelCompositionTests(unittest.TestCase):
         self.assertEqual(app.config.status_base_url,
                          "https://operator-response.example")
         self.assertEqual(factory.call_args_list[0].kwargs,
-                         {"region": "sfo1", "token": "a.b.c", "topic": "zenith-intake-v1"})
+                         {"region": "sfo1", "token": None, "topic": "zenith-intake-v1"})
         self.assertEqual(factory.call_args_list[1].kwargs,
-                         {"region": "sfo1", "token": "a.b.c", "topic": "zenith-reference-v1"})
+                         {"region": "sfo1", "token": None, "topic": "zenith-reference-v1"})
+
+    @patch("service_management.provider_vercel.VercelQueuePublisher.from_sdk",
+           return_value=Publisher())
+    def test_does_not_capture_a_build_environment_oidc_token(self, factory):
+        environment = dict(self.environment)
+        environment["VERCEL_OIDC_TOKEN"] = "stale.build.token"
+        provider_application_from_environment(environment)
+        self.assertEqual(factory.call_args_list[0].kwargs["token"], None)
+        self.assertEqual(factory.call_args_list[1].kwargs["token"], None)
 
     @patch("service_management.provider_vercel.VercelQueuePublisher.from_sdk",
            return_value=Publisher())

@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 import unittest
 
+from vercel.headers import get_headers
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("service_management_vercel_entrypoint",
@@ -35,6 +37,20 @@ class VercelEntrypointTests(unittest.TestCase):
                      "/api/provider?route=intake&route=reference"):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 ENTRYPOINT._route_path(path)
+
+    def test_queue_publish_uses_only_one_platform_oidc_request_header(self):
+        token = "header.payload.signature"
+        self.assertIsNone(get_headers())
+        with ENTRYPOINT._queue_oidc_context((("X-Vercel-Oidc-Token", token),
+                                             ("Origin", "https://anima.example"))):
+            self.assertEqual(get_headers(), {"x-vercel-oidc-token": token})
+        self.assertIsNone(get_headers())
+        for headers in ((),
+                        (("X-Vercel-Oidc-Token", token),
+                         ("x-vercel-oidc-token", token)),
+                        (("X-Vercel-Oidc-Token", "not-a-jwt"),)):
+            with self.subTest(headers=headers), self.assertRaises(ValueError):
+                ENTRYPOINT._queue_oidc_context(headers)
 
 
 if __name__ == "__main__":

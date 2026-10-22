@@ -111,11 +111,11 @@ def provider_application_from_environment(
                                  (caller,), policy_digest), roots, signer)
     publisher = VercelQueuePublisher.from_sdk(
         region=_required(environment, "ZENITH_QUEUE_REGION", 32),
-        token=environment.get("VERCEL_OIDC_TOKEN"),
+        token=None,
         topic=_required(environment, "ZENITH_QUEUE_TOPIC", 128))
     reference_publisher = VercelQueuePublisher.from_sdk(
         region=_required(environment, "ZENITH_QUEUE_REGION", 32),
-        token=environment.get("VERCEL_OIDC_TOKEN"),
+        token=None,
         topic=_required(environment, "ZENITH_REFERENCE_QUEUE_TOPIC", 128))
     gateway_policy = CastaliaGatewayPolicy((pin,), policy_digest, recipient_key_id, caller)
     gateway = EncryptedIntakeGateway(
