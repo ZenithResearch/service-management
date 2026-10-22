@@ -206,6 +206,28 @@ test("an explicitly trusted response origin receives only exact read authority",
   assert.deepEqual(sent, {url: "https://operator-response.example/v1/client/requests/anima-brand-request-01", authorization: "Castalia exact-read-presentation"});
 });
 
+test("an unknown submission can reconcile from the configured path-mounted response base", async () => {
+  let sent = "";
+  const projection = await fixture("request-delivered.fixture.json");
+  const client = new ServiceClient({
+    baseUrl: "https://provider.example",
+    trustedReadOrigins: ["https://operator-response.example"],
+    responseBaseUrl: "https://operator-response.example/zenith/provider",
+    authorize: async (request) => {
+      assert.equal(request.operation, "request.status");
+      assert.equal(request.resource, "requests/anima-brand-request-01");
+      return {Authorization: "Castalia exact-read-presentation"};
+    },
+    fetch: async (input) => {
+      sent = String(input);
+      return new Response(JSON.stringify(projection), {status: 200, headers: {"Content-Type": "application/json"}});
+    },
+  });
+  assert.equal((await client.statusForRequest("anima-brand-request-01")).request_id, "anima-brand-request-01");
+  assert.equal(sent, "https://operator-response.example/zenith/provider/v1/client/requests/anima-brand-request-01");
+  assert.throws(() => new ServiceClient({baseUrl: "https://provider.example", trustedReadOrigins: ["https://operator-response.example"], responseBaseUrl: "https://attacker.example/zenith/provider", authorize: async () => ({})}), /not explicitly trusted/);
+});
+
 test("client reads bind the exact operation and resource without URL or secrets", () => {
   const bytes = clientReadAuthorizationBytes({operation: "request.status", resource: "requests/request-1", method: "GET", body_digest: null});
   assert.deepEqual(JSON.parse(new TextDecoder().decode(bytes)), {

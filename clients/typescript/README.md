@@ -1,4 +1,4 @@
-# Service Management TypeScript client 0.8.0
+# Service Management TypeScript client 0.8.1
 
 Status: **integration-ready contract package**. The fixtures are explicitly
 illustrative and do not claim that the Zenith brand-package provider is deployed.
@@ -124,10 +124,14 @@ Fetches omit ambient browser credentials and reject redirects; receiver-issued
 authorization is supplied only by the explicit `authorize` callback. The current
 Zenith candidate uses this option for a GET-only Tailscale Funnel origin. Public
 Anima users access its ordinary HTTPS URL and do not join the provider tailnet.
+For a submission whose response was lost, configure the provider's reviewed
+path-capable `responseBaseUrl` separately and call `statusForRequest` with the
+stable request ID. The trust set remains an authorization allowlist; it does not
+discover or redirect the response route.
 
 ## Compatibility
 
-Version 0.8.0 reads the exact closed `*.v1` envelopes in this package and closed
+Version 0.8.1 reads the exact closed `*.v1` envelopes in this package and closed
 provider-catalog v1, v2 and v3. It adds the v4 contract bundle for the read-
 authorization value while preserving the frozen v1-v3 bundles. Unknown fields
 or versions fail closed.

@@ -15,7 +15,7 @@
 - Derive the first service's outbox identity from its stable Case and immutable
   plan revision, expose a read-only activation preview, and deliver only the
   exact retained handoff selected by finite Runtime authority.
-- Add provider-catalog v3, dependency-free TypeScript client v0.8.0 and fixtures
+- Add provider-catalog v3, dependency-free TypeScript client v0.8.1 and fixtures
   for provider-neutral discovery, reviewed intake, authoritative request/Case
   projection, deliverables and canonical receipt references.
 - Add receiver-authorized client reads over the retained requester binding,
@@ -24,8 +24,10 @@
   unchanged; v4 adds only the closed client-read authorization value.
 - Add an explicit separate read-origin trust set and a numeric-loopback,
   GET/OPTIONS-only projection listener suitable for an operator-approved HTTPS
-  Tailscale Funnel. Intake can return the configured status origin while
-  mutation methods remain disabled on the Mac listener.
+  Tailscale Funnel. Intake can return the configured path-capable response base,
+  and an unknown outcome can reconcile its stable request ID from the same
+  explicitly configured base, while mutation methods remain disabled on the Mac
+  listener.
 - Add durable encrypted intake, exact retry admission, native secS opening,
   Castalia requester evidence and receiver-credential issuance, plus a bounded
   credential-bound Vercel HTTP gateway composition.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
 from datetime import UTC, datetime
 
 from .contracts import canonical, identifier
@@ -35,10 +36,13 @@ class LocalProviderProjection:
         if public_base_url is not None:
             from urllib.parse import urlsplit
             parsed = urlsplit(public_base_url)
+            segments = parsed.path.split("/")[1:]
             if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
-                    or parsed.path not in {"", "/"} or parsed.query or parsed.fragment
-                    or public_base_url.endswith("/")):
-                raise ValueError("invalid public projection origin")
+                    or parsed.query or parsed.fragment or public_base_url.endswith("/")
+                    or any(segment in {"", ".", ".."}
+                           or re.fullmatch(r"[A-Za-z0-9._~-]+", segment) is None
+                           for segment in segments)):
+                raise ValueError("invalid public projection base")
         self.public_base_url = public_base_url or ""
 
     def _source(self, request_id: str, subject: str) -> dict:

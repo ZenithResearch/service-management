@@ -139,7 +139,7 @@ class ProviderHttpApplicationTests(unittest.IsolatedAsyncioTestCase):
     async def test_intake_can_publish_an_explicit_https_status_origin(self):
         app = ProviderHttpApplication(
             ProviderHttpConfig("https://anima.example",
-                               status_base_url="https://operator-response.example"),
+                               status_base_url="https://operator-response.example/zenith/provider"),
             self.issuer, self.gateway)
         body = envelope()
         proof = base64.urlsafe_b64encode(b"proof").decode().rstrip("=")
@@ -155,7 +155,7 @@ class ProviderHttpApplicationTests(unittest.IsolatedAsyncioTestCase):
                 ("X-Zenith-Envelope-Key-Id", KEY_ID),
                 ("X-Zenith-Envelope-Expires-At", "1900000000000")), body))
         self.assertEqual(json.loads(result.body)["status_url"],
-                         "https://operator-response.example/v1/client/requests/anima-brand-request-01")
+                         "https://operator-response.example/zenith/provider/v1/client/requests/anima-brand-request-01")
 
     async def test_read_only_composition_rejects_every_mutating_method(self):
         app = ProviderHttpApplication(

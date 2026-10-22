@@ -193,7 +193,7 @@ closed unless all of these values are explicit:
 | `ZENITH_MEMBERSHIP_ROOTS_JSON` | Closed JSON array of accepted Zenith membership issuer roots |
 | `ZENITH_QUEUE_REGION`, `ZENITH_QUEUE_TOPIC` | One Vercel Queue route |
 | `VERCEL_OIDC_TOKEN` | Vercel-provided transport credential when required by the SDK |
-| `ZENITH_STATUS_BASE_URL` | Exact HTTPS origin of the separately deployed authorized projection listener |
+| `ZENITH_STATUS_BASE_URL` | Exact HTTPS base, with optional normalized mount path, of the separately deployed authorized projection listener |
 
 The composition creates no identity, key, membership, project, Queue or paid
 resource. Real values must match provider-catalog v3. Secret rotation, rate
@@ -211,11 +211,13 @@ presentation and must match the requester membership retained at admission.
 
 The operator pins the existing intake and Service databases, requester policy,
 Runtime endpoint and Runtime Wallet query authority. `--public-base-url` is the
-exact HTTPS Funnel origin placed on returned artifact and receipt links. The
-gateway uses the same origin as `ZENITH_STATUS_BASE_URL` when returning the
-initial `status_url`. Anima configures that origin in `trustedReadOrigins` before
-it will send authority there. Neither response data nor catalog metadata can add
-an origin to the client's trust set.
+exact HTTPS Funnel base, including an optional normalized mount path, placed on
+returned artifact and receipt links. The gateway uses the same base as
+`ZENITH_STATUS_BASE_URL` when returning the initial `status_url`. Anima
+configures its origin in `trustedReadOrigins`, and configures the full base as
+`responseBaseUrl` so an unknown intake outcome can reconcile the stable request
+ID even when no acknowledgement supplied `status_url`. Neither response data nor
+catalog metadata can add an origin to the client's trust set.
 
 ```text
 service-management-provider-projection \
@@ -223,7 +225,7 @@ service-management-provider-projection \
   --service-database /private/provider/service.db \
   --requester-policy /private/provider/requester-policy.json \
   --browser-origin https://anima.example \
-  --public-base-url https://matrix-home.example.ts.net \
+  --public-base-url https://matrix-home.example.ts.net/zenith/provider \
   --runtime-endpoint http://127.0.0.1:8292 \
   --runtime-wallet-command /private/provider/bin/castalia-wallet-service \
   --runtime-wallet-command-sha256 <released-sha256> \

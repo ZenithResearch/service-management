@@ -101,10 +101,12 @@ class ProviderProjectionTests(unittest.TestCase):
 
     def test_explicit_public_origin_is_applied_to_delivery_links(self):
         projection = LocalProviderProjection(
-            Intakes(), Storage(), Runtime(), public_base_url="https://operator-response.example",
+            Intakes(), Storage(), Runtime(),
+            public_base_url="https://operator-response.example/zenith/provider",
             clock=lambda: datetime(2026, 10, 22, 12, tzinfo=UTC))
         result = projection.status("request-1", "did.castalia.key.member-1")
-        self.assertTrue(all(item["href"].startswith("https://operator-response.example/")
+        self.assertTrue(all(item["href"].startswith(
+                            "https://operator-response.example/zenith/provider/")
                             for item in result["deliverables"] + result["receipts"]))
         with self.assertRaises(ValueError):
             LocalProviderProjection(Intakes(), Storage(), Runtime(),

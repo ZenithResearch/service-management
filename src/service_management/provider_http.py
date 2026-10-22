@@ -64,10 +64,13 @@ class ProviderHttpConfig:
         if self.status_base_url is not None:
             from urllib.parse import urlsplit
             parsed = urlsplit(self.status_base_url)
+            segments = parsed.path.split("/")[1:]
             if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
-                    or parsed.path not in {"", "/"} or parsed.query or parsed.fragment
-                    or self.status_base_url.endswith("/")):
-                raise ValueError("invalid public status origin")
+                    or parsed.query or parsed.fragment or self.status_base_url.endswith("/")
+                    or any(segment in {"", ".", ".."}
+                           or re.fullmatch(r"[A-Za-z0-9._~-]+", segment) is None
+                           for segment in segments)):
+                raise ValueError("invalid public status base")
 
 
 class ProviderHttpApplication:
