@@ -54,6 +54,11 @@ Management command authority. Vercel OIDC, region/topic/group, retention and rat
 limits belong to the deployment composition. This source creates no Vercel project
 or paid resource.
 
+The first live release uses the [required Vercel Queue acceptance
+sequence](docs/vercel-queue-acceptance.md). It fixes the reviewed topic/group
+names, 24-hour retention, offline enqueue and local pre-ack commit proof, then
+continues through authoritative status, artifacts and receipts.
+
 The public credential endpoint verifies an active public Zenith membership
 credential and signs only the existing Wallet Auth v2 request-credential transcript
 over exact request and disclosure digests. It generates no signer key or membership.

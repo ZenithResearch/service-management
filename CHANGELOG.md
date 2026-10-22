@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 - Route the separately encrypted reference-object endpoint through the production Vercel handler and regression-test every public rewrite.
+- Document the required Vercel Queue acceptance gate, including the reviewed
+  topic/group candidates, 24-hour retention, offline enqueue, local pre-ack
+  commit, authoritative response proof, evidence set and rollback sequence.
 
 ### Fixed
 - Align the live Vercel Queue gateway and current provider-catalog v4 fixture
