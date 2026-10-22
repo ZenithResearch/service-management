@@ -1,0 +1,14 @@
+{
+  "schema": "service.intake.v1",
+  "request_id": "anima-brand-request-01",
+  "idempotency_key": "anima-brand-submit-01",
+  "service": {"provider_id": "zenith", "service_id": "zenith.anima.brand-package", "service_version": "fixture-1"},
+  "brief": {
+    "schema": "service.reviewed-brief.v1",
+    "revision": 3,
+    "content_hash": "e9a2835fabb0a712524d367487046175be3f92fa4594840cb9f39e8b81d89b15",
+    "values": {"organization_name": "North Shore Field Notes", "brand_brief": "Build a practical identity for a local field-research practice."}
+  },
+  "references": [],
+  "submitted_at": "2026-10-21T18:00:00Z"
+}

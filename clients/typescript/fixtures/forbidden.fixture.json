@@ -1,0 +1,5 @@
+{
+  "schema": "service.client-error.v1",
+  "request_id": "anima-brand-request-01",
+  "error": {"code": "forbidden", "message": "The receiver did not authorize this operation.", "retryable": false}
+}

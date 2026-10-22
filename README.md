@@ -11,6 +11,16 @@ readiness or completion. Source-owned handoff, explicit plan revisions, and runt
 summary projection preparation are also included; their exact task IDs and
 integration boundaries are in [ADR 0002](docs/adr/0002-runtime-handoff-and-plan-revisions.md).
 
+The [Zenith member ingress boundary](docs/zenith-member-ingress.md) describes how
+an Anima producer can submit an existing closed command after membership and
+ontology preflight without treating membership, Rolodex or transport identity as
+command authority. The [provider client intake boundary](docs/provider-client-intake.md)
+adds a durable pull worker in front of that canonical command boundary. It records
+an exact reviewed intake before acknowledging an external inbox, preserves one
+stable admission command across restart and unknown outcomes, and keeps dispatcher
+authentication, requester membership and Service Management command authority
+separate.
+
 ## Run locally
 
 There are no runtime dependencies outside Python 3.12's standard library. From this
@@ -22,6 +32,26 @@ PYTHONPATH=src python3.12 -m service_management \
   --database /tmp/service-management-dev/service.db \
   --environment development --local-dev-untrusted
 ```
+
+The optional Vercel Queues gateway publisher and poll adapter and Castalia
+requester verifier use pinned dependencies:
+
+```sh
+python3.12 -m pip install '.[vercel-queue,castalia-verifier]'
+```
+
+They are not enabled by the existing local CLI. The fail-closed Vercel entry point
+in `api/provider.py` exposes only receiver-credential issuance and ciphertext
+intake, with exact-origin CORS and no ambient browser credentials. It requires a
+qualified requester verifier and released secS envelope producer. The provider
+worker requires the matching opener, pinned membership/request issuers and Service
+Management command authority. Vercel OIDC, region/topic/group, retention and rate
+limits belong to the deployment composition. This source creates no Vercel project
+or paid resource.
+
+The public credential endpoint verifies an active public Zenith membership
+credential and signs only the existing Wallet Auth v2 request-credential transcript
+over exact request and disclosure digests. It generates no signer key or membership.
 
 The CLI binds `127.0.0.1:8091`. `GET /live` reports process liveness; it does not
 certify authority or storage readiness. `GET /ready` checks bounded SQLite writer

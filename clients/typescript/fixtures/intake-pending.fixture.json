@@ -1,0 +1,10 @@
+{
+  "schema": "service.intake-result.v1",
+  "request_id": "anima-brand-request-01",
+  "idempotency_key": "anima-brand-submit-01",
+  "state": "pending",
+  "transport_receipt": {"transport": "fixture-inbox", "receipt_id": "transport-receipt-01", "recorded_at": "2026-10-21T18:00:01Z", "expires_at": "2026-10-28T18:00:01Z"},
+  "service_request_id": null,
+  "service_request_version": null,
+  "status_url": "/v1/client/requests/anima-brand-request-01"
+}

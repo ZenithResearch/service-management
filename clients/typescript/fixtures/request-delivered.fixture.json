@@ -1,0 +1,35 @@
+{
+  "schema": "service.client-projection.v1",
+  "request_id": "anima-brand-request-01",
+  "idempotency_key": "anima-brand-submit-01",
+  "provider_id": "zenith",
+  "service_id": "zenith.anima.brand-package",
+  "transport": {"state": "consumed", "receipt": {"transport": "fixture-inbox", "receipt_id": "transport-receipt-01", "recorded_at": "2026-10-21T18:00:01Z", "expires_at": "2026-10-28T18:00:01Z"}},
+  "service_request": {"id": "anima-brand-request-01", "state": "accepted", "version": 4, "case_id": "anima-brand-case-01"},
+  "case": {"id": "anima-brand-case-01", "state": "planned", "version": 3, "current_plan_revision_id": "brand-plan-01"},
+  "execution": {"run_id": "run-brand-01", "state": "succeeded", "freshness": "current", "observed_at": "2026-10-21T18:05:00Z"},
+  "deliverables": [
+    {
+      "id": "brand-package",
+      "version": 1,
+      "label": "Brand package",
+      "artifact": {"schema": "service.artifact-manifest.v1", "artifact_id": "brand-package-artifact-01", "content_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "byte_length": 4096, "media_type": "application/zip", "filename": "brand-package.zip"},
+      "href": "/v1/client/artifacts/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "receipt_ids": ["receipt-attempt-brand-01"]
+    }
+  ],
+  "receipts": [
+    {
+      "schema": "service.receipt-reference.v1",
+      "owner": "process-runtime",
+      "receipt_schema": "runtime.receipt.v1",
+      "receipt_id": "receipt-attempt-brand-01",
+      "content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "recorded_at": "2026-10-21T18:04:59Z",
+      "verification": {"state": "unverified", "verifier": "process-runtime-integrity-v1", "detail": "The current runtime receipt signature field is null."},
+      "href": "/v1/client/receipts/process-runtime/receipt-attempt-brand-01"
+    }
+  ],
+  "updated_at": "2026-10-21T18:05:00Z",
+  "retry_after_ms": null
+}

@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {"source": "/v1/request-credential", "destination": "/api/provider?route=credential"},
+    {"source": "/v1/client/requests", "destination": "/api/provider?route=intake"}
+  ]
+}
