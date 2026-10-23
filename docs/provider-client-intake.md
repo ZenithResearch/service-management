@@ -248,6 +248,14 @@ configures its origin in `trustedReadOrigins`, and configures the full base as
 ID even when no acknowledgement supplied `status_url`. Neither response data nor
 catalog metadata can add an origin to the client's trust set.
 
+Before the first request yields an exact Runtime handoff, the operator may use
+`--runtime-unavailable` without any Runtime endpoint or Wallet Runtime fields.
+This bootstrap mode serves authorized transport and Service-owned state, reports
+`runtime_authority: false` from `/ready`, and reports execution as unavailable
+after a handoff exists. It grants no execution authority. Restart the listener
+with the complete exact Runtime tuple after the owner selects that request's
+Actor and Run.
+
 ```text
 service-management-provider-projection \
   --intake-database /private/provider/intake.db \
@@ -262,6 +270,10 @@ service-management-provider-projection \
   --runtime-wallet-configuration-sha256 <reviewed-sha256> \
   --host 127.0.0.1 --port 8293
 ```
+
+The pre-Run bootstrap uses the same stores, policy, origin, public base, host and
+port, replacing every `--runtime-*` field above with exactly
+`--runtime-unavailable`.
 
 The local `/live` and `/ready` diagnostics report listener liveness and the
 independent intake-store, Service-store, requester-policy and Runtime-authority

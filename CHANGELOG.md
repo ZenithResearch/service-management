@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add an explicit read-only provider projection bootstrap mode that carries no
+  Runtime authority, allowing authorized transport and Service status to be
+  reachable before the first request yields an exact Run identity.
+
 - Install the pinned Vercel Queue and Castalia verifier extras in public-source
   CI so the required Queue entrypoint and its runtime OIDC binding are exercised
   by the same dependency profile used in the provider release bundle.
