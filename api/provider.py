@@ -15,6 +15,7 @@ from service_management.provider_vercel import provider_application_from_environ
 
 
 _ROUTES = {
+    "catalog": "/v1/provider",
     "credential": "/v1/request-credential",
     "intake": "/v1/client/requests",
     "reference": "/v1/client/reference-objects",

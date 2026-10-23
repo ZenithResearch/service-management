@@ -18,6 +18,8 @@ class VercelEntrypointTests(unittest.TestCase):
     def test_every_public_write_route_reaches_the_bounded_handler(self):
         rewrites = json.loads((ROOT / "vercel.json").read_text())["rewrites"]
         self.assertEqual(rewrites, [
+            {"source": "/v1/provider",
+             "destination": "/api/provider?route=catalog"},
             {"source": "/v1/request-credential",
              "destination": "/api/provider?route=credential"},
             {"source": "/v1/client/requests",
@@ -25,6 +27,8 @@ class VercelEntrypointTests(unittest.TestCase):
             {"source": "/v1/client/reference-objects",
              "destination": "/api/provider?route=reference"},
         ])
+        self.assertEqual(ENTRYPOINT._route_path("/api/provider?route=catalog"),
+                         "/v1/provider")
         self.assertEqual(ENTRYPOINT._route_path("/api/provider?route=credential"),
                          "/v1/request-credential")
         self.assertEqual(ENTRYPOINT._route_path("/api/provider?route=intake"),

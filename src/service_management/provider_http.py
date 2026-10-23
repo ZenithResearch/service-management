@@ -56,6 +56,7 @@ class ProviderHttpResponse:
 @dataclass(frozen=True)
 class ProviderHttpConfig:
     browser_origin: str
+    catalog_path: str = "/v1/provider"
     credential_path: str = "/v1/request-credential"
     intake_path: str = "/v1/client/requests"
     reference_path: str = "/v1/client/reference-objects"
@@ -70,9 +71,11 @@ class ProviderHttpConfig:
                 or not parsed_origin.hostname or parsed_origin.username or parsed_origin.password
                 or parsed_origin.path or parsed_origin.query or parsed_origin.fragment
                 or self.browser_origin.endswith("/")
+                or not self.catalog_path.startswith("/")
                 or not self.credential_path.startswith("/") or not self.intake_path.startswith("/")
                 or not self.reference_path.startswith("/")
-                or len({self.credential_path, self.intake_path, self.reference_path}) != 3):
+                or len({self.catalog_path, self.credential_path, self.intake_path,
+                        self.reference_path}) != 4):
             raise ValueError("invalid provider HTTP configuration")
         if self.status_base_url is not None:
             parsed = urlsplit(self.status_base_url)
@@ -91,10 +94,11 @@ class ProviderHttpApplication:
     def __init__(self, config: ProviderHttpConfig, credential_issuer: ReceiverCredentialIssuer | None,
                  intake_gateway: EncryptedIntakeGateway | None, *, client_reader=None,
                  read_authorizer=None, reference_gateway: EncryptedReferenceGateway | None = None,
-                 read_only: bool = False):
+                 catalog: dict | None = None, read_only: bool = False):
         self.config, self.credential_issuer, self.intake_gateway = (
             config, credential_issuer, intake_gateway)
         self.reference_gateway = reference_gateway
+        self.catalog = json.loads(canonical(catalog)) if catalog is not None else None
         self.client_reader, self.read_authorizer, self.read_only = client_reader, read_authorizer, read_only
         if read_only and (credential_issuer is not None or intake_gateway is not None
                           or reference_gateway is not None
@@ -111,6 +115,10 @@ class ProviderHttpApplication:
             if request.method == "OPTIONS":
                 return self._response(204, b"")
             if request.method == "GET":
+                if request.path == self.config.catalog_path:
+                    if self.catalog is None:
+                        raise ServiceError("runtime_unavailable")
+                    return self._json(200, self.catalog)
                 return self._read(request.path, headers)
             if self.read_only:
                 return self._error(405, "invalid_request", "The method is not supported.", False, None)

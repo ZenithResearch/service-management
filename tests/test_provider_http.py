@@ -108,6 +108,20 @@ class ProviderHttpApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response_headers["Access-Control-Allow-Origin"], "https://anima.example")
         self.assertNotIn("Access-Control-Allow-Credentials", response_headers)
 
+    async def test_public_catalog_is_canonical_and_still_origin_bound(self):
+        catalog = {"schema": "service.provider-catalog.v4", "provider": {"id": "zenith"}}
+        app = ProviderHttpApplication(
+            ProviderHttpConfig("https://anima.example"), self.issuer, self.gateway,
+            reference_gateway=self.gateway, catalog=catalog)
+        result = await app.handle(ProviderHttpRequest(
+            "GET", "/v1/provider", headers(), b""))
+        self.assertEqual(result.status, 200)
+        self.assertEqual(result.body,
+                         b'{"provider":{"id":"zenith"},"schema":"service.provider-catalog.v4"}')
+        denied = await app.handle(ProviderHttpRequest(
+            "GET", "/v1/provider", (("Origin", "https://attacker.example"),), b""))
+        self.assertEqual(denied.status, 403)
+
     async def test_encrypted_intake_maps_only_bounded_metadata_and_ciphertext(self):
         body = envelope()
         proof = base64.urlsafe_b64encode(b'{"proof":"fixture"}').decode().rstrip("=")

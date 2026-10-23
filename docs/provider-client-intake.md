@@ -189,21 +189,28 @@ failure is an unknown outcome, so the caller retries the exact envelope.
 
 ## Vercel source deployment configuration
 
-The checked-in `vercel.json` rewrites only `/v1/request-credential`,
-`/v1/client/requests` and `/v1/client/reference-objects` to the bounded Python handler. `requirements.txt` installs
+The checked-in `vercel.json` rewrites only `/v1/provider`,
+`/v1/request-credential`, `/v1/client/requests` and
+`/v1/client/reference-objects` to the bounded Python handler. `GET /v1/provider`
+returns the deployment-pinned canonical provider-catalog v4 used by Anima's
+trust check. `requirements.txt` installs
 the package with its pinned Queue and Castalia verifier extras. Deployment fails
 closed unless all of these values are explicit:
 
 | Variable | Meaning |
 | --- | --- |
 | `ZENITH_ANIMA_ORIGIN` | One exact browser origin; HTTPS except numeric loopback HTTP for the local Anima pilot; also the Wallet caller pin |
+| `ZENITH_PUBLIC_BASE_URL` | Exact public HTTPS gateway origin; catalog endpoints must be beneath this origin |
 | `ZENITH_PROVIDER_ID` | Provider identifier in the catalog and routing headers |
 | `ZENITH_RECIPIENT_KEY_ID` | Released secS recipient key identifier published in the catalog |
+| `ZENITH_RECIPIENT_PUBLIC_KEY_HEX` | Released secS recipient public key published in the catalog |
 | `ZENITH_RECEIVER_ISSUER`, `ZENITH_RECEIVER_KEY_ID`, `ZENITH_RECEIVER_PUBLIC_KEY_HEX` | Receiver credential signing identity and public pin |
 | `ZENITH_RECEIVER_SIGNING_SEED_B64` | Owner-provisioned unpadded base64url Ed25519 seed stored only as a protected server secret; startup proves it matches the public pin |
 | `ZENITH_RECEIVER_AUDIENCE` | Wallet Auth audience |
 | `ZENITH_REQUESTER_POLICY_DIGEST_SHA256` | Exact receiver policy digest |
 | `ZENITH_MEMBERSHIP_ROOTS_JSON` | Closed JSON array of accepted Zenith membership issuer roots |
+| `ZENITH_MEMBERSHIP_ISSUER_ORIGIN` | Exact membership issuer origin published in the catalog |
+| `ZENITH_PROVIDER_CATALOG_JSON` | Canonical provider-catalog v4; startup validates its endpoints and every authority, membership and recipient pin against the independent variables above |
 | `ZENITH_QUEUE_REGION`, `ZENITH_QUEUE_TOPIC` | Vercel region and reviewed-intake Queue route |
 | `ZENITH_REFERENCE_QUEUE_TOPIC` | Separate encrypted reference-object Queue route |
 | `x-vercel-oidc-token` request header | Vercel-provided runtime transport credential; the entry point requires exactly one and binds Queue publication to that request context |
