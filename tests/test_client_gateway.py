@@ -161,7 +161,7 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
                                       requester_presentation=b"wallet-membership-presentation")
         self.assertEqual(result["state"], "pending")
         self.assertIsNone(result["service_request_id"])
-        self.assertEqual(result["transport_receipt"]["expires_at"], "2026-10-29T08:00:00.000Z")
+        self.assertEqual(result["transport_receipt"]["expires_at"], "2026-10-23T08:00:00.000Z")
         self.assertEqual(verifier.calls[0][1], hashlib.sha256(body).hexdigest())
         self.assertEqual(sealer.calls[0][:3], (body, b"durable-exact-request-proof", "zenith"))
         self.assertEqual(publisher.calls[0][0], b"secs-encrypted-envelope")
@@ -203,14 +203,14 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_official_publisher_passes_stable_idempotency_and_retention(self):
         queue = Queue(); publisher = VercelQueuePublisher(queue, "topic")
-        result = await publisher.send(b"ciphertext", idempotency_key="stable-key", retention_seconds=604800)
+        result = await publisher.send(b"ciphertext", idempotency_key="stable-key", retention_seconds=86400)
         self.assertEqual(result, "opaque-id")
-        self.assertEqual(queue.calls, [("topic", b"ciphertext", {"idempotency_key": "stable-key", "retention": 604800})])
+        self.assertEqual(queue.calls, [("topic", b"ciphertext", {"idempotency_key": "stable-key", "retention": 86400})])
 
     async def test_official_publisher_rejects_retention_beyond_live_vercel_limit(self):
         with self.assertRaises(ValueError):
             await VercelQueuePublisher(Queue(), "topic").send(
-                b"ciphertext", idempotency_key="stable-key", retention_seconds=604801)
+                b"ciphertext", idempotency_key="stable-key", retention_seconds=86401)
 
     def test_factory_rejects_static_token_shape_before_import(self):
         with self.assertRaises(ValueError):
