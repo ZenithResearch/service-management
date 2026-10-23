@@ -378,6 +378,6 @@ class VercelQueuePublisher:
         try:
             from vercel.queue import ALL_DEPLOYMENTS, ByteBufferTransport, QueueClient, Topic
         except ImportError as error:
-            raise RuntimeError("install the optional vercel-queue dependency") from error
+            raise RuntimeError("the required vercel-queue dependency is unavailable") from error
         queue = QueueClient(region=region, token=token, deployment=ALL_DEPLOYMENTS)
         return cls(queue, Topic[bytes](topic, transport=ByteBufferTransport()))
