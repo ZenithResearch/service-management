@@ -160,7 +160,7 @@ def _parser() -> argparse.ArgumentParser:
     pull.add_argument("--lease-seconds", type=int, default=300)
     pull.add_argument("--intake-opener", required=True)
     pull.add_argument("--intake-opener-sha256", required=True)
-    pull.add_argument("--oidc-token-file", required=True)
+    pull.add_argument("--oidc-token-file")
     pull_references = commands.add_parser(
         "pull-references-once", help="poll one bounded encrypted-reference Queue batch")
     for action, options in (
@@ -172,7 +172,7 @@ def _parser() -> argparse.ArgumentParser:
         (pull_references.add_argument, ("--intake-opener-sha256",)),
         (pull_references.add_argument, ("--oidc-token-file",)),
     ):
-        action(*options, required=True)
+        action(*options, required=options != ("--oidc-token-file",))
     pull_references.add_argument("--limit", type=int, default=10)
     pull_references.add_argument("--lease-seconds", type=int, default=300)
 
@@ -245,7 +245,8 @@ def main(argv=None) -> int:
                                       args.lease_seconds)
             adapter = (VercelPollReferenceObjects if args.command == "pull-references-once"
                        else VercelPollIntake)
-            worker = adapter.from_sdk(region=args.region, token=_oidc_token(args.oidc_token_file),
+            token = _oidc_token(args.oidc_token_file) if args.oidc_token_file else None
+            worker = adapter.from_sdk(region=args.region, token=token,
                                       config=config, opener=opener, store=store)
             results = asyncio.run(worker.ingest_once())
         elif args.command in {"admit-once", "resume-admission-once"}:

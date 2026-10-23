@@ -229,6 +229,16 @@ resource. Real values must match provider-catalog v4. Secret rotation, rate
 limits, live origin configuration and deployment qualification remain release
 operations, not browser behavior.
 
+An off-Vercel poll worker may either read one owner-private OIDC token file or
+omit `--oidc-token-file` and let the official Queue SDK resolve
+`VERCEL_OIDC_TOKEN` from its process environment. The environment form is
+intended for a bounded wrapper such as `vercel env run`; it keeps the token out
+of argv, browser state and persistent provider configuration. Operators must use
+a Vercel environment that contains no unrelated secrets, because `env run`
+injects that environment into the child process. This transport credential only
+authorizes Queue access. It does not grant Zenith membership, Service admission
+or Runtime authority.
+
 ## GET-only operator response listener
 
 `service-management-provider-projection` binds only to explicit numeric

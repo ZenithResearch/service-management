@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Allow the off-Vercel Queue poll worker to resolve its short-lived OIDC token
+  from the process environment, avoiding a persistent token file when a bounded
+  launcher supplies only the project-scoped transport credential.
+
 - Install the pinned Vercel Queue and Castalia verifier extras in public-source
   CI so the required Queue entrypoint and its runtime OIDC binding are exercised
   by the same dependency profile used in the provider release bundle.
