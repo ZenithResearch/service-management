@@ -14,6 +14,7 @@ from .client_intake import IntakeStore
 from .contracts import canonical
 from .provider_http import ProviderHttpApplication, ProviderHttpConfig, ProviderHttpRequest
 from .provider_projection import LocalProviderProjection
+from .runtime_port import UnavailableRuntime
 from .sdk_adapter import SDKRuntimeAdapter
 from .sqlite_store import SQLiteUnitOfWork
 from .wallet_service_authority import CastaliaWalletRuntimeAuthority
@@ -39,15 +40,7 @@ class ProjectionComposition:
         caller = ("browser", args.browser_origin)
         policy = CastaliaClientReadPolicy(
             requester.presentation_pins, requester.policy_digest_sha256, caller)
-        authority = CastaliaWalletRuntimeAuthority(
-            executable=args.runtime_wallet_command,
-            executable_sha256=args.runtime_wallet_command_sha256,
-            configuration=args.runtime_wallet_configuration,
-            configuration_sha256=args.runtime_wallet_configuration_sha256,
-            timeout=args.timeout,
-        )
-        runtime = SDKRuntimeAdapter.connect(
-            args.runtime_endpoint, authority=authority, timeout=args.timeout)
+        authority, runtime = _runtime(args)
         self.intakes = IntakeStore(intake_database)
         self.service = SQLiteUnitOfWork(service_database)
         self.authority = authority
@@ -70,8 +63,9 @@ class ProjectionComposition:
         except (OSError, ValueError, TypeError):
             pass
         try:
-            self.authority._check_profile()
-            checks["runtime_authority"] = True
+            if self.authority is not None:
+                self.authority._check_profile()
+                checks["runtime_authority"] = True
         except Exception:
             pass
         return {"schema": "service.provider-projection-readiness.v1",
@@ -142,6 +136,29 @@ def make_server(composition: ProjectionComposition, host: str, port: int) -> Thr
     return server
 
 
+def _runtime(args):
+    values = (args.runtime_endpoint, args.runtime_wallet_command,
+              args.runtime_wallet_command_sha256,
+              args.runtime_wallet_configuration,
+              args.runtime_wallet_configuration_sha256)
+    if args.runtime_unavailable:
+        if any(value is not None for value in values):
+            raise ValueError("bootstrap projection cannot receive Runtime authority")
+        return None, UnavailableRuntime()
+    if any(value is None for value in values):
+        raise ValueError("active projection requires complete Runtime authority")
+    authority = CastaliaWalletRuntimeAuthority(
+        executable=args.runtime_wallet_command,
+        executable_sha256=args.runtime_wallet_command_sha256,
+        configuration=args.runtime_wallet_configuration,
+        configuration_sha256=args.runtime_wallet_configuration_sha256,
+        timeout=args.timeout,
+    )
+    runtime = SDKRuntimeAdapter.connect(
+        args.runtime_endpoint, authority=authority, timeout=args.timeout)
+    return authority, runtime
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Serve browser-authorized canonical provider reads on numeric loopback.")
@@ -150,11 +167,13 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--requester-policy", required=True)
     parser.add_argument("--browser-origin", required=True)
     parser.add_argument("--public-base-url", required=True)
-    parser.add_argument("--runtime-endpoint", required=True)
-    parser.add_argument("--runtime-wallet-command", required=True)
-    parser.add_argument("--runtime-wallet-command-sha256", required=True)
-    parser.add_argument("--runtime-wallet-configuration", required=True)
-    parser.add_argument("--runtime-wallet-configuration-sha256", required=True)
+    parser.add_argument("--runtime-unavailable", action="store_true",
+                        help="serve authorized pre-Run state without Runtime authority")
+    parser.add_argument("--runtime-endpoint")
+    parser.add_argument("--runtime-wallet-command")
+    parser.add_argument("--runtime-wallet-command-sha256")
+    parser.add_argument("--runtime-wallet-configuration")
+    parser.add_argument("--runtime-wallet-configuration-sha256")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", required=True, type=int)
     parser.add_argument("--timeout", default=5.0, type=float)

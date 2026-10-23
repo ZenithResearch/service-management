@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import threading
 import unittest
+from argparse import Namespace
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from service_management.provider_http import ProviderHttpResponse
-from service_management.provider_projection_server import make_server
+from service_management.provider_projection_server import _runtime, make_server
+from service_management.runtime_port import UnavailableRuntime
 
 
 class Application:
@@ -68,6 +70,32 @@ class ProviderProjectionServerTests(unittest.TestCase):
     def test_listener_is_numeric_loopback_only(self):
         with self.assertRaises(ValueError):
             make_server(self.composition, "0.0.0.0", 8293)
+
+    def test_bootstrap_runtime_is_explicit_and_carries_no_authority(self):
+        args = Namespace(runtime_unavailable=True, runtime_endpoint=None,
+                         runtime_wallet_command=None,
+                         runtime_wallet_command_sha256=None,
+                         runtime_wallet_configuration=None,
+                         runtime_wallet_configuration_sha256=None,
+                         timeout=5)
+        authority, runtime = _runtime(args)
+        self.assertIsNone(authority)
+        self.assertIsInstance(runtime, UnavailableRuntime)
+
+        args.runtime_endpoint = "http://127.0.0.1:8292"
+        with self.assertRaisesRegex(ValueError, "cannot receive Runtime authority"):
+            _runtime(args)
+
+    def test_active_runtime_requires_complete_authority_tuple(self):
+        args = Namespace(runtime_unavailable=False,
+                         runtime_endpoint="http://127.0.0.1:8292",
+                         runtime_wallet_command=None,
+                         runtime_wallet_command_sha256=None,
+                         runtime_wallet_configuration=None,
+                         runtime_wallet_configuration_sha256=None,
+                         timeout=5)
+        with self.assertRaisesRegex(ValueError, "complete Runtime authority"):
+            _runtime(args)
 
 
 if __name__ == "__main__": unittest.main()
