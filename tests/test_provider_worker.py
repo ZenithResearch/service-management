@@ -43,12 +43,15 @@ def lifecycle_args(command):
             "--compilation-hash", "5" * 64]
 
 
-def pull_args(token_file):
-    return ["pull-once", "--intake-database", "/private/intake.db",
+def pull_args(token_file=None):
+    result = ["pull-once", "--intake-database", "/private/intake.db",
             "--region", "sfo1", "--topic", "zenith-intake-v1",
             "--consumer-group", "zenith-provider-mac", "--limit", "1",
             "--lease-seconds", "300", "--intake-opener", "/private/secs-provider-intake-v1",
-            "--intake-opener-sha256", "4" * 64, "--oidc-token-file", str(token_file)]
+            "--intake-opener-sha256", "4" * 64]
+    if token_file is not None:
+        result.extend(["--oidc-token-file", str(token_file)])
+    return result
 
 
 def delivery_args(handoff_id):
@@ -141,6 +144,17 @@ class ProviderWorkerTests(unittest.TestCase):
                 self.assertEqual(main(pull_args(token_file)), 0)
             self.assertEqual(factory.call_args.kwargs["token"], "header.payload.signature")
             self.assertNotIn("header.payload.signature", output.getvalue())
+
+    def test_pull_without_token_file_delegates_environment_resolution_to_sdk(self):
+        worker = type("Worker", (), {"ingest_once": staticmethod(lambda: _async([]))})()
+        output = io.StringIO()
+        with patch("service_management.provider_worker.IntakeStore"), \
+                patch("service_management.provider_worker.NativeSecSIntakeOpener"), \
+                patch("service_management.provider_worker.VercelPollIntake.from_sdk",
+                      return_value=worker) as factory, contextlib.redirect_stdout(output):
+            self.assertEqual(main(pull_args()), 0)
+        self.assertIsNone(factory.call_args.kwargs["token"])
+        self.assertNotIn("VERCEL_OIDC_TOKEN", output.getvalue())
 
     def test_oidc_token_file_rejects_symlink_and_permissive_mode(self):
         with tempfile.TemporaryDirectory() as directory:
