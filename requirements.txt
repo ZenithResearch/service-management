@@ -1,1 +1,1 @@
-.[vercel-queue,castalia-verifier,catalog-validation]
+.

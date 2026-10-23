@@ -14,6 +14,9 @@
   never capture a build-time token in the cached gateway composition.
 
 ### Fixed
+- Promote the Queue SDK, Castalia cryptographic verifier and catalog validator
+  from optional extras to required runtime dependencies so Vercel and offline
+  provider installations cannot start without the libraries their entrypoints use.
 - Align the live Vercel Queue gateway and current provider-catalog v4 fixture
   with Vercel's current seven-day maximum retention while keeping older catalog
   versions readable for stored-client compatibility.

@@ -28,8 +28,7 @@ verified original and the lifecycle commits it into the Runtime input artifact.
 
 ## Run locally
 
-There are no runtime dependencies outside Python 3.12's standard library. From this
-repository:
+The core lifecycle CLI runs on Python 3.12. From this repository:
 
 ```sh
 PYTHONPATH=src python3.12 -m unittest discover -s tests -v
@@ -38,11 +37,11 @@ PYTHONPATH=src python3.12 -m service_management \
   --environment development --local-dev-untrusted
 ```
 
-The optional Vercel Queues gateway publisher and poll adapter and Castalia
-requester verifier use pinned dependencies:
+The production gateway, Vercel Queues adapters, provider catalog validator and
+Castalia requester verifier use the package's pinned runtime dependencies:
 
 ```sh
-python3.12 -m pip install '.[vercel-queue,castalia-verifier]'
+python3.12 -m pip install .
 ```
 
 They are not enabled by the existing local CLI. The fail-closed Vercel entry point
