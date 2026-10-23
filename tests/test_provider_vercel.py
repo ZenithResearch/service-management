@@ -84,9 +84,24 @@ class ProviderVercelCompositionTests(unittest.TestCase):
     def test_rejects_insecure_browser_origin_and_malformed_membership_roots(self, factory):
         insecure = dict(self.environment); insecure["ZENITH_ANIMA_ORIGIN"] = "http://anima.example"
         with self.assertRaises(ValueError): provider_application_from_environment(insecure)
+        localhost = dict(self.environment); localhost["ZENITH_ANIMA_ORIGIN"] = "http://localhost:4337"
+        with self.assertRaises(ValueError): provider_application_from_environment(localhost)
+        path = dict(self.environment); path["ZENITH_ANIMA_ORIGIN"] = "http://127.0.0.1:4337/anima"
+        with self.assertRaises(ValueError): provider_application_from_environment(path)
         malformed = dict(self.environment); malformed["ZENITH_MEMBERSHIP_ROOTS_JSON"] = "[]"
         with self.assertRaises(ValueError): provider_application_from_environment(malformed)
         factory.assert_not_called()
+
+    @patch("service_management.provider_vercel.VercelQueuePublisher.from_sdk",
+           return_value=Publisher())
+    def test_accepts_one_exact_numeric_loopback_browser_origin(self, factory):
+        environment = dict(self.environment)
+        environment["ZENITH_ANIMA_ORIGIN"] = "http://127.0.0.1:4337"
+        app = provider_application_from_environment(environment)
+        self.assertEqual(app.config.browser_origin, "http://127.0.0.1:4337")
+        self.assertEqual(app.credential_issuer.config.callers,
+                         (("browser", "http://127.0.0.1:4337"),))
+        self.assertEqual(factory.call_count, 2)
 
 
 if __name__ == "__main__":

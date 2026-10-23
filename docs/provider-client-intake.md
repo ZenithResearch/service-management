@@ -196,7 +196,7 @@ closed unless all of these values are explicit:
 
 | Variable | Meaning |
 | --- | --- |
-| `ZENITH_ANIMA_ORIGIN` | One exact HTTPS browser origin; also the Wallet caller pin |
+| `ZENITH_ANIMA_ORIGIN` | One exact browser origin; HTTPS except numeric loopback HTTP for the local Anima pilot; also the Wallet caller pin |
 | `ZENITH_PROVIDER_ID` | Provider identifier in the catalog and routing headers |
 | `ZENITH_RECIPIENT_KEY_ID` | Released secS recipient key identifier published in the catalog |
 | `ZENITH_RECEIVER_ISSUER`, `ZENITH_RECEIVER_KEY_ID`, `ZENITH_RECEIVER_PUBLIC_KEY_HEX` | Receiver credential signing identity and public pin |
@@ -208,6 +208,11 @@ closed unless all of these values are explicit:
 | `ZENITH_REFERENCE_QUEUE_TOPIC` | Separate encrypted reference-object Queue route |
 | `x-vercel-oidc-token` request header | Vercel-provided runtime transport credential; the entry point requires exactly one and binds Queue publication to that request context |
 | `ZENITH_STATUS_BASE_URL` | Exact HTTPS base, with optional normalized mount path, of the separately deployed authorized projection listener |
+
+The deployed provider gateway remains HTTPS when the configured Anima caller is
+numeric loopback HTTP. That exception applies only to the exact browser origin
+bound into CORS and Wallet authorization; it does not downgrade the gateway,
+permit `localhost`, accept a path, or create a local submission endpoint.
 
 The composition never captures a build-time `VERCEL_OIDC_TOKEN`; Vercel runtime
 OIDC tokens arrive on the request header and are resolved by the Queue SDK while

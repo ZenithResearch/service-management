@@ -90,8 +90,10 @@ def provider_application_from_environment(
         environment: Mapping[str, str] = os.environ) -> ProviderHttpApplication:
     """Compose only from explicit deployment configuration; create no keys."""
     origin = _required(environment, "ZENITH_ANIMA_ORIGIN", 512)
-    if not origin.startswith("https://"):
-        raise ValueError("ZENITH_ANIMA_ORIGIN must use HTTPS")
+    # Validate the caller before constructing queue publishers. The public
+    # gateway remains HTTPS; an explicitly configured browser caller may use
+    # HTTP only on an exact numeric loopback origin for the local Anima pilot.
+    ProviderHttpConfig(origin)
     provider_id = _required(environment, "ZENITH_PROVIDER_ID", 128)
     recipient_key_id = _required(environment, "ZENITH_RECIPIENT_KEY_ID", 255)
     issuer = _required(environment, "ZENITH_RECEIVER_ISSUER", 200)
