@@ -14,6 +14,7 @@ request was admitted, a Case was created, a process ran or a deliverable exists.
 | Setting | Candidate value |
 | --- | --- |
 | Vercel project | `zenith-provider-intake` |
+| Anima pilot caller origin | `http://127.0.0.1:4337` |
 | Queue region | `sfo1` |
 | Request topic | `zenith-intake-v1` |
 | Reference topic | `zenith-reference-v1` |
@@ -39,7 +40,7 @@ Do not invent, generate or copy these values into source control:
 
 | Variable | Required source |
 | --- | --- |
-| `ZENITH_ANIMA_ORIGIN` | Exact deployed Anima HTTPS origin selected for this acceptance |
+| `ZENITH_ANIMA_ORIGIN` | Exact Anima browser origin selected for this acceptance; HTTPS in production, or numeric loopback HTTP for the local browser pilot |
 | `ZENITH_RECIPIENT_KEY_ID` | Released secS provider intake public-key identifier |
 | `ZENITH_RECEIVER_ISSUER`, `ZENITH_RECEIVER_KEY_ID`, `ZENITH_RECEIVER_PUBLIC_KEY_HEX` | Reviewed Wallet receiver-credential signer identity |
 | `ZENITH_RECEIVER_SIGNING_SEED_B64` | Matching protected Vercel secret; never a file, client value or repository value |
@@ -62,13 +63,15 @@ a separately reviewed refresh composition before production qualification.
 
 1. Pin the merged Service Management release, the released secS browser sealer,
    the released native opener and the reviewed provider-catalog v4 bytes.
-2. Review the exact non-secret settings above, the real Anima origin, membership
+2. Review the exact non-secret settings above, the exact Anima browser origin, membership
    roots, receiver public identity and requester-policy digest. Verify that the
    protected signing seed derives the published receiver public key.
 3. Create the Vercel project and configure its protected and non-secret values.
    Deploy the checked-in `vercel.json` and `api/provider.py` from the reviewed
    release. Confirm only the three documented public routes exist and each
-   Queue publication uses the runtime OIDC request header.
+   Queue publication uses the runtime OIDC request header. The provider gateway
+   remains public HTTPS even when the allowlisted browser caller is the exact
+   local origin `http://127.0.0.1:<port>`.
 4. Keep the operator Mac provider stack stopped. In Anima, prepare one new v4
    request with stable client request and idempotency IDs, optional one-reference
    metadata, and the exact reviewed brief. Obtain explicit Castalia Wallet
