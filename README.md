@@ -56,7 +56,7 @@ or paid resource.
 
 The first live release uses the [required Vercel Queue acceptance
 sequence](docs/vercel-queue-acceptance.md). It fixes the reviewed topic/group
-names, seven-day Queue retention, offline enqueue and local pre-ack commit proof, then
+names, 24-hour retention, offline enqueue and local pre-ack commit proof, then
 continues through authoritative status, artifacts and receipts.
 
 The public credential endpoint verifies an active public Zenith membership
