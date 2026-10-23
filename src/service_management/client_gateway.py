@@ -123,7 +123,7 @@ class EncryptedReferenceRequesterVerifier(Protocol):
 class EncryptedGatewayConfig:
     provider_id: str
     recipient_key_id: str
-    retention_seconds: int = 86_400
+    retention_seconds: int = 604_800
 
     def __post_init__(self):
         if not isinstance(self.recipient_key_id, str):
@@ -133,7 +133,7 @@ class EncryptedGatewayConfig:
                 or key.decode("ascii") != self.recipient_key_id
                 or any(byte < 0x21 or byte > 0x7e for byte in key)
                 or type(self.retention_seconds) is not int
-                or not 60 <= self.retention_seconds <= 86_400):
+                or not 60 <= self.retention_seconds <= 604_800):
             raise ValueError("invalid encrypted gateway configuration")
 
 
@@ -292,10 +292,10 @@ class EncryptedReferenceGateway:
 @dataclass(frozen=True)
 class GatewayConfig:
     provider_id: str
-    retention_seconds: int = 86_400
+    retention_seconds: int = 604_800
 
     def __post_init__(self):
-        if not identifier(self.provider_id) or type(self.retention_seconds) is not int or not 60 <= self.retention_seconds <= 86_400:
+        if not identifier(self.provider_id) or type(self.retention_seconds) is not int or not 60 <= self.retention_seconds <= 604_800:
             raise ValueError("invalid provider gateway configuration")
 
 
@@ -362,7 +362,7 @@ class VercelQueuePublisher:
     async def send(self, payload: bytes, *, idempotency_key: str, retention_seconds: int) -> str | None:
         if (not isinstance(payload, bytes) or not 0 < len(payload) <= MAX_QUEUE_PAYLOAD
                 or not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 256
-                or type(retention_seconds) is not int or not 60 <= retention_seconds <= 86_400):
+                or type(retention_seconds) is not int or not 60 <= retention_seconds <= 604_800):
             raise ValueError("invalid queue publish")
         result = await self.queue.send(self.topic, payload, idempotency_key=idempotency_key,
                                        retention=retention_seconds)

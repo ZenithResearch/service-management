@@ -32,8 +32,8 @@ test("closed readers reject unknown fields and versions", async () => {
 
 test("catalog v4 prepares and retries one exact encrypted original reference", async () => {
   const catalog = parseProviderCatalog(await fixture("provider-catalog-v4.fixture.json")) as ProviderCatalogV4;
-  assert.equal(catalog.intake.max_retention_seconds, 86400);
-  assert.equal(catalog.reference_objects.max_retention_seconds, 86400);
+  assert.equal(catalog.intake.max_retention_seconds, 604800);
+  assert.equal(catalog.reference_objects.max_retention_seconds, 604800);
   const request = await fixture("intake-request.fixture.json") as IntakeRequest;
   const bytes = new TextEncoder().encode("reference");
   request.references = [{schema: "service.artifact-manifest.v1", artifact_id: "reference-1",
