@@ -19,6 +19,7 @@
   never capture a build-time token in the cached gateway composition.
 
 ### Fixed
+- Add explicit recovery to the opt-in development Runtime authority and exercise Runtime restart and synthetic native verification in CI — pending handoffs can recover across acknowledgement loss and process restarts under the full integration suite.
 - Promote the Queue SDK, Castalia cryptographic verifier and catalog validator
   from optional extras to required runtime dependencies so Vercel and offline
   provider installations cannot start without the libraries their entrypoints use.
