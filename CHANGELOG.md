@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+
 - Add an explicit read-only provider projection bootstrap mode that carries no
   Runtime authority, allowing authorized transport and Service status to be
   reachable before the first request yields an exact Run identity.
@@ -29,6 +30,7 @@
 - Correct provider-catalog v2-v4 fixture recipient key identifiers to the canonical secS X25519 public-key SHA-256 prefix and enforce that interop invariant in the TypeScript suite.
 
 ### Added
+- Add read-only Request, Case and CasePlan projections with pinned normalized Zenith 0.1.0 schemas, complete-content validation and explicit identity mappings — allows shared semantic exchange while retaining application-owned handoff, outbox and approval contracts.
 - Add provider-catalog v4 and a distinct encrypted reference-object route with
   exact browser retry, Castalia authorization, independent queue consumption,
   secS native opening, durable pre-ack storage, and admission gating. The first

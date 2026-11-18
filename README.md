@@ -166,3 +166,10 @@ for the shared Apple-silicon Mac installer and operator UI. Component source liv
 under [ZenithResearch](https://github.com/ZenithResearch). Installation does not
 provision native identities, grant command authority, or enable external effects.
 See `NOTICE.public-baseline.md` for the scope of this clean publication.
+
+## Normalized Zenith projections
+
+The public `ZenithProjections` Python adapter exports existing Service records
+as normalized Zenith Request, Case and complete CasePlan versions. The adapter
+packages and verifies the pinned Zenith 0.1.0 schemas for offline use. See
+[projection usage and ownership](docs/normalized-zenith-projections.md).

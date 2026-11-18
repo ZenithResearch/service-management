@@ -23,3 +23,10 @@ jobs:
       - run: python -m pip install --no-deps --no-build-isolation ./runtime-source
       - run: python -m pip install --no-build-isolation '.[vercel-queue,castalia-verifier]'
       - run: PYTHONPATH=src python -m unittest discover -s tests -v
+
+      - name: Qualify wheel-installed normalized projections offline
+        run: |
+          python -m pip wheel --no-deps --no-build-isolation . --wheel-dir dist
+          python -m venv --system-site-packages "$RUNNER_TEMP/service-ontology-wheel"
+          "$RUNNER_TEMP/service-ontology-wheel/bin/python" -m pip install --no-deps --ignore-installed dist/service_management-*.whl
+          python tools/qualify_ontology_install.py --python "$RUNNER_TEMP/service-ontology-wheel/bin/python"
