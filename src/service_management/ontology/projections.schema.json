@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:service-management:ontology-projections:v1",
+  "title": "Service-owned normalized projection shapes",
+  "$defs": {
+    "Case": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "iri",
+          "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+        },
+        "type": {
+          "const": "https://zenith-research.ca/ontology/terms/Case"
+        },
+        "requests": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "iri",
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "requests"
+      ],
+      "additionalProperties": false
+    },
+    "RetainedPlanContent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "iri",
+          "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+        },
+        "caseId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "revisionId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "schema": {
+          "type": "string",
+          "format": "iri",
+          "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+        },
+        "value": {
+          "type": "object",
+          "minProperties": 1
+        }
+      },
+      "required": [
+        "id",
+        "caseId",
+        "revisionId",
+        "schema",
+        "value"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

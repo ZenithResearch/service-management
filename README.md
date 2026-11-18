@@ -150,10 +150,15 @@ use temporary databases and require permission to bind a loopback test port.
 Real provider qualification uses the installed public SDK and launches the
 runtime's public CLI against a temporary database. With the runtime distribution
 available in the test environment, set `SERVICE_RUNTIME_COMMAND` to a JSON argv
-list such as `["python3.12", "-m", "process_runtime"]` and run the same test suite.
-Without that variable the provider test reports a skip; fake-provider tests remain
-available with only the standard library. Integration tests use explicitly
-untrusted local development authority and do not qualify production secS.
+list such as `["python3.12", "-I", "-m", "process_runtime"]` and run the same test suite.
+The Service development adapter implements explicit recovery by refreshing its
+test evidence for the exact retained command after acknowledgement loss or restart.
+Set `SERVICE_NATIVE_VERIFIER` to the absolute path of the Runtime's reviewed
+`native/secs-verifier` build to enable the synthetic signed receiver fixtures.
+CI builds that helper from the pinned Runtime source and enables both variables
+for the full Python suite. Integration tests use temporary state and explicitly
+untrusted development authority. Synthetic fixture verification checks the native
+receiver contract independently of production authority qualification.
 
 Successful command results and audit events are retained without automatic
 expiry. Retention policy, backup/recovery operations, and production scaling are
@@ -166,3 +171,10 @@ for the shared Apple-silicon Mac installer and operator UI. Component source liv
 under [ZenithResearch](https://github.com/ZenithResearch). Installation does not
 provision native identities, grant command authority, or enable external effects.
 See `NOTICE.public-baseline.md` for the scope of this clean publication.
+
+## Normalized Zenith projections
+
+The public `ZenithProjections` Python adapter exports existing Service records
+as normalized Zenith Request, Case and complete CasePlan versions. The adapter
+packages and verifies the pinned Zenith 0.1.0 schemas for offline use. See
+[projection usage and ownership](docs/normalized-zenith-projections.md).

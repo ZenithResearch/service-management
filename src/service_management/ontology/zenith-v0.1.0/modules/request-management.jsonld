@@ -1,0 +1,82 @@
+{
+  "@context": {
+    "zn": "https://zenith-research.ca/ontology/terms/",
+    "owl": "http://www.w3.org/2002/07/owl#",
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "label": "rdfs:label",
+    "comment": "rdfs:comment",
+    "domain": {
+      "@id": "rdfs:domain",
+      "@type": "@id"
+    },
+    "range": {
+      "@id": "rdfs:range",
+      "@type": "@id"
+    },
+    "subClassOf": {
+      "@id": "rdfs:subClassOf",
+      "@type": "@id"
+    },
+    "versionIRI": {
+      "@id": "owl:versionIRI",
+      "@type": "@id"
+    },
+    "versionInfo": "owl:versionInfo",
+    "canonicalAuthority": {
+      "@id": "zn:canonicalAuthority",
+      "@type": "@id"
+    },
+    "semanticOperation": {
+      "@id": "zn:semanticOperation",
+      "@type": "@id"
+    },
+    "equivalentClass": {
+      "@id": "owl:equivalentClass",
+      "@type": "@id"
+    },
+    "imports": {
+      "@id": "owl:imports",
+      "@type": "@id"
+    }
+  },
+  "@graph": [
+    {
+      "@id": "https://zenith-research.ca/ontology/normalized/modules/request-management",
+      "@type": "owl:Ontology",
+      "versionIRI": "https://zenith-research.ca/ontology/normalized/v0.1.0/modules/request-management.jsonld",
+      "versionInfo": "0.1.0",
+      "imports": [
+        "https://zenith-research.ca/ontology/normalized/v0.1.0/modules/core.jsonld"
+      ]
+    },
+    {
+      "@id": "zn:Request",
+      "@type": "owl:Class",
+      "label": "Request",
+      "comment": "Information describing a requested outcome; an Artifact exchanged or managed by an Entity.",
+      "subClassOf": "zn:Artifact"
+    },
+    {
+      "@id": "zn:Case",
+      "@type": "owl:Class",
+      "label": "Case",
+      "comment": "An optional handling context grouping requests, concerns and plans; no universal Request-to-Case lifecycle is imposed.",
+      "subClassOf": "owl:Thing"
+    },
+    {
+      "@id": "zn:CasePlan",
+      "@type": "owl:Class",
+      "label": "CasePlan",
+      "comment": "An identifiable immutable version of the plan describing how a Case is to be handled.",
+      "subClassOf": "zn:Artifact"
+    },
+    {
+      "@id": "zn:supersededBy",
+      "@type": "owl:ObjectProperty",
+      "label": "superseded by",
+      "comment": "Relates an immutable version to its directly approved replacement. Approval, lineage and retained content are recorded separately."
+    }
+  ]
+}

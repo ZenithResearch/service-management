@@ -197,6 +197,38 @@ class SDKAdapterAdmissionTests(unittest.TestCase):
         self.assertEqual([mode for mode, _ in calls], ["issue", "resume"])
         self.assertEqual(calls[0][1], calls[1][1])
 
+    def test_local_dev_can_resume_an_exact_retained_command(self):
+        command = requests()[0][1]
+        original = deepcopy(command)
+        adapter = SDKRuntimeAdapter.connect(
+            self.endpoint, environment="test", local_dev_untrusted=True
+        )
+        adapter.command(command)
+        adapter.resume_command(command)
+        self.assertEqual(command, original)
+        self.assertEqual([item["request"] for item in self.received], [original, original])
+        proofs = [json.loads(base64.b64decode(item["authority_base64"]))
+                  for item in self.received]
+        self.assertEqual([proof["schema"] for proof in proofs],
+                         ["runtime.local-dev-envelope.v1"] * 2)
+        self.assertEqual(proofs[0]["session_id"], proofs[1]["session_id"])
+        self.assertNotEqual(proofs[0]["nonce"], proofs[1]["nonce"])
+        with self.assertRaises(ValueError):
+            SDKRuntimeAdapter.connect(self.endpoint, authority=adapter._client.authority)
+
+    def test_resume_without_explicit_recovery_cannot_issue_new_authority(self):
+        calls = []
+        adapter = SDKRuntimeAdapter.connect(
+            self.endpoint, authority=lambda value: calls.append(value) or EVIDENCE
+        )
+        with self.assertRaises(RuntimeCallError) as error:
+            adapter.resume_command(requests()[0][1])
+        self.assertEqual(error.exception.code, "unknown_outcome")
+        self.assertTrue(error.exception.retryable)
+        self.assertTrue(error.exception.uncertain)
+        self.assertEqual(calls, [])
+        self.assertEqual(self.received, [])
+
     def test_invalid_envelopes_deny_before_authority(self):
         for kind, envelope in requests():
             mutations = [

@@ -20,3 +20,6 @@ service-management-provider-projection = "service_management.provider_projection
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+service_management = ["ontology/*.json", "ontology/*.jsonld", "ontology/zenith-v0.1.0/*.json", "ontology/zenith-v0.1.0/modules/*.jsonld", "ontology/zenith-v0.1.0/schemas/*.json"]

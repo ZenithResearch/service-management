@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zenith-research.ca/ontology/normalized/v0.1.0/schemas/case-plan.schema.json",
+  "title": "CasePlan version envelope and revision profile",
+  "$comment": "An envelope for immutable CasePlan versions. Consumers choose content and adequacy rules, validate referenced payloads, and enforce approval and lineage in context.",
+  "$ref": "#/$defs/CasePlan",
+  "$defs": {
+    "IRIReference": {
+      "type": "string",
+      "format": "iri",
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+    },
+    "RevisionProfile": {
+      "type": "object",
+      "description": "Reusable metadata for an immutable version of an information object. The enclosing object owns the version identity; metadata has no independent identity.",
+      "properties": {
+        "revisionNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Sequence within the applicable plan history, not a globally unique version ID."
+        },
+        "previousRevision": {
+          "$ref": "#/$defs/IRIReference",
+          "description": "Immediate derivation predecessor, when recorded. Omit if none is known; does not assert approval or replacement."
+        },
+        "createdBy": {
+          "$ref": "#/$defs/IRIReference",
+          "description": "Creator identity reference. Resolving a provider subject to a shared Entity requires explicit identity mapping."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "changeReason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "revisionNumber",
+        "createdBy",
+        "createdAt"
+      ],
+      "additionalProperties": false
+    },
+    "TypedPlanContent": {
+      "type": "object",
+      "description": "The complete retained plan snapshot for this version, validated against the referenced immutable content schema. The content schema and adequacy criteria must be selected explicitly; source Case.plan_scope plus an execution pin are not assumed sufficient.",
+      "properties": {
+        "schema": {
+          "$ref": "#/$defs/IRIReference",
+          "description": "Version-specific content-schema identifier. Consumers must resolve and validate value against this schema."
+        },
+        "value": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Complete version content under the referenced schema, including applicable planning information. A summary or unresolved pin is not automatically a complete snapshot."
+        }
+      },
+      "required": [
+        "schema",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "CasePlan": {
+      "type": "object",
+      "description": "An identifiable immutable plan version describing how a Case is to be handled. Every complete version is zn:CasePlan, a subclass of zn:Artifact; there is no separate CasePlanRevision class.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/IRIReference",
+          "description": "Distinct immutable version identifier; never reuse it for changed content."
+        },
+        "type": {
+          "const": "zn:CasePlan"
+        },
+        "case": {
+          "$ref": "#/$defs/IRIReference",
+          "description": "The stable Case whose handling this plan describes."
+        },
+        "revision": {
+          "$ref": "#/$defs/RevisionProfile"
+        },
+        "content": {
+          "$ref": "#/$defs/TypedPlanContent"
+        },
+        "sourceEvidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IRIReference"
+          },
+          "uniqueItems": true,
+          "description": "References to retained source records and exact supporting evidence. Migration must preserve all original fields, including provider-specific authority, pins, inputs and carry-forward evidence, whether embedded by the content schema or retained here."
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "case",
+        "revision",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "CasePlanSelection": {
+      "type": "object",
+      "description": "Associated Case state, outside immutable plan content. A draft does not replace the current approved version. No new ontology class.",
+      "properties": {
+        "case": {
+          "$ref": "#/$defs/IRIReference"
+        },
+        "currentApprovedPlan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IRIReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "approvalEvidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IRIReference"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "case",
+        "currentApprovedPlan"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "currentApprovedPlan": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "currentApprovedPlan"
+            ]
+          },
+          "then": {
+            "required": [
+              "approvalEvidence"
+            ]
+          }
+        }
+      ]
+    },
+    "Supersession": {
+      "type": "object",
+      "description": "Associated provenance asserting older-version zn:supersededBy approved-replacement. Write only on approved replacement, outside immutable content. Previous-revision lineage is distinct. No global transitivity or functionality is asserted. Run cancellation is not implied. This is a relationship assertion schema, not a new ontology class.",
+      "properties": {
+        "olderVersion": {
+          "$ref": "#/$defs/IRIReference"
+        },
+        "replacementVersion": {
+          "$ref": "#/$defs/IRIReference"
+        },
+        "approvalEvidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IRIReference"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "olderVersion",
+        "replacementVersion",
+        "approvalEvidence"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

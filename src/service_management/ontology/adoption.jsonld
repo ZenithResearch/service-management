@@ -1,0 +1,14 @@
+{
+  "@context": {
+    "owl": "http://www.w3.org/2002/07/owl#",
+    "imports": {
+      "@id": "owl:imports",
+      "@type": "@id"
+    }
+  },
+  "@id": "urn:service-management:normalized-projections:v1",
+  "@type": "owl:Ontology",
+  "imports": [
+    "https://zenith-research.ca/ontology/normalized/v0.1.0/modules/request-management.jsonld"
+  ]
+}

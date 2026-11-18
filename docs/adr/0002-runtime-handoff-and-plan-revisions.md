@@ -50,6 +50,10 @@ claimed runtime identity or access runtime storage. Production authority is not
 qualified by local tests; the local SDK authority mode is explicit and prohibited
 in production composition.
 
+The Service development adapter provides an explicit `resume` method that
+refreshes local test evidence for the exact retained command. Other authority
+adapters supply their own recovery method for an uncertain delivery.
+
 An outbox delivery attempt is recorded as uncertain before a network call. The
 exact stored command is copied to the adapter; a mutable adapter cannot alter the
 retained intent. A validated acknowledgement must match command identity,

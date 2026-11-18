@@ -1,0 +1,389 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zenith-research.ca/ontology/normalized/v0.1.0/schemas/core.schema.json",
+  "title": "Zenith Core profiles",
+  "$defs": {
+    "ArtifactRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "byteLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mediaType": {
+          "type": "string",
+          "minLength": 3
+        },
+        "revisionId": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+        }
+      },
+      "required": [
+        "id",
+        "sha256",
+        "byteLength",
+        "mediaType"
+      ],
+      "additionalProperties": false
+    },
+    "EntityProjection": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+        },
+        "types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "invocationContract": {
+          "$ref": "#/$defs/ArtifactRef"
+        }
+      },
+      "required": [
+        "id",
+        "types",
+        "invocationContract"
+      ],
+      "additionalProperties": false
+    },
+    "OperationDefinition": {
+      "type": "object",
+      "properties": {
+        "effect": {
+          "enum": [
+            "query",
+            "command"
+          ]
+        },
+        "inputSchema": {
+          "type": [
+            "object",
+            "boolean"
+          ]
+        },
+        "outputSchema": {
+          "type": [
+            "object",
+            "boolean"
+          ]
+        },
+        "errorSchema": {
+          "type": [
+            "object",
+            "boolean"
+          ]
+        }
+      },
+      "required": [
+        "effect",
+        "inputSchema",
+        "outputSchema",
+        "errorSchema"
+      ],
+      "additionalProperties": false
+    },
+    "InvocationContract": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "const": "urn:zenith:review:addressable-invocable:1"
+        },
+        "maxMessageLifetimeSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resultRetentionSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "operations": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/OperationDefinition"
+          }
+        },
+        "schemaDialect": {
+          "const": "https://json-schema.org/draft/2020-12/schema"
+        }
+      },
+      "required": [
+        "profile",
+        "maxMessageLifetimeSeconds",
+        "resultRetentionSeconds",
+        "operations",
+        "schemaDialect"
+      ],
+      "additionalProperties": false
+    },
+    "Message": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "urn:zenith:review:message:1"
+        },
+        "id": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+        },
+        "to": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+        },
+        "contract": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "operation": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        },
+        "input": {}
+      },
+      "required": [
+        "schema",
+        "id",
+        "to",
+        "contract",
+        "operation",
+        "issuedAt",
+        "expiresAt",
+        "input"
+      ],
+      "additionalProperties": false
+    },
+    "Reply": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "const": "urn:zenith:review:reply:1"
+            },
+            "id": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+            },
+            "inReplyTo": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+            },
+            "requestHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "from": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+            },
+            "contract": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "status": {
+              "const": "ok"
+            },
+            "output": {}
+          },
+          "required": [
+            "schema",
+            "id",
+            "inReplyTo",
+            "requestHash",
+            "from",
+            "contract",
+            "status",
+            "output"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "const": "urn:zenith:review:reply:1"
+            },
+            "id": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+            },
+            "inReplyTo": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+            },
+            "requestHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "from": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+            },
+            "contract": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "status": {
+              "const": "error"
+            },
+            "error": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "const": "protocol"
+                    },
+                    "code": {
+                      "enum": [
+                        "invalid_message",
+                        "unsupported_contract",
+                        "unknown_operation",
+                        "invalid_input",
+                        "unauthorized",
+                        "expired",
+                        "message_id_conflict"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "const": "operation"
+                    },
+                    "details": {},
+                    "effects": {
+                      "enum": [
+                        "none",
+                        "some"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "details",
+                    "effects"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "schema",
+            "id",
+            "inReplyTo",
+            "requestHash",
+            "from",
+            "contract",
+            "status",
+            "error"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "const": "urn:zenith:review:reply:1"
+            },
+            "id": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+            },
+            "inReplyTo": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+            },
+            "requestHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "from": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+            },
+            "contract": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "status": {
+              "const": "unresolved"
+            },
+            "reason": {
+              "enum": [
+                "pending",
+                "outcome_unknown"
+              ]
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "schema",
+            "id",
+            "inReplyTo",
+            "requestHash",
+            "from",
+            "contract",
+            "status",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

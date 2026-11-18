@@ -63,7 +63,12 @@ class SDKRuntimeAdapter:
                 raise ValueError(
                     "local_dev_untrusted is prohibited in production and cannot replace an authority adapter"
                 )
-            authority = LocalDevAuthority(environment=environment)
+            class ResumableLocalDevAuthority(LocalDevAuthority):
+                def resume(self, request):
+                    """Refresh development evidence for an exact retained intent."""
+                    return self(request)
+
+            authority = ResumableLocalDevAuthority(environment=environment)
         # Missing authority remains the SDK's explicit unauthenticated denial.
         return cls(
             RuntimeClient(endpoint, authority=authority, timeout=timeout),
